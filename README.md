@@ -61,20 +61,26 @@ The axes are labeled X, Y and Z on the Circuit Playground board and the software
 The Cartesian coordinate system traditionally maps these X,Y,Z designations in a specific way and the Circuit Playground board adheres to this standard. The X and Y axes describe the flat plane of the board and the Z axis is the vertical or normal to the board’s face. This seems logical when the board is flat on a table.
 
 🧭 Understanding the 3-Axis Accelerometer
-    The accelerometer detects motion in three directions:
-        X-axis: Left ↔ Right
-        Y-axis: Forward ↔ Backward
-        Z-axis: Up ↕ Down
-        These axes are fixed relative to the board, not the world. So:
-            If the board is flat on a table, Z is vertical.
-            If the board is on its side (like in this project), Z might now point forward/backward.
+      The accelerometer detects motion in three directions:
+      
+          X-axis: Left ↔ Right
+          Y-axis: Forward ↔ Backward
+          Z-axis: Up ↕ Down
+            These axes are fixed relative to the board, not the world.
+            
+          So:
+              If the board is flat on a table, Z is vertical.
+              If the board is on its side (like in this project), Z might now point forward/backward.
+            
 🧠 Local vs. Global Orientation
-    The board always reports motion based on its own orientation, not the room or car.
-    Think of it like your head and feet: even if you’re upside down, your head is still your head.
+
+      The board always reports motion based on its own orientation, not the room or car.
+      Think of it like your head and feet: even if you’re upside down, your head is still your head.
 
 # How Does It Work
 🌀 How an Accelerometer Works (Simplified)
     Basic Principle: It’s like a weight on a spring. When the device moves, the spring flexes.
+       
         Voltage Output:
         At rest → voltage ≈ 0
         Move one way → positive voltage
@@ -82,11 +88,13 @@ The Cartesian coordinate system traditionally maps these X,Y,Z designations in a
         3D Sensing: Three of these spring-weight systems measure motion in X, Y, and Z axes.
         
 🌍 Gravity & Tilt Effects
+       
         The sensor also detects gravity, since gravity pulls on the weight.
         This means it’s sensitive to tilt (e.g., going uphill or downhill).
         For more accurate motion tracking, you’d need an IMU (Inertial Measurement Unit), which combines multiple sensors.
         
 🔧 Practical Notes
+      
         The sensor used is the LIS3DH, also available as a standalone board from Adafruit.
         Adafruit’s tutorials explain how to:
         Adjust G-force sensitivity
@@ -94,6 +102,7 @@ The Cartesian coordinate system traditionally maps these X,Y,Z designations in a
         Recognize taps and double taps
         
 ⚠️ Important Setup Tip
+       
         Mount the gauge level when the car is on flat ground.
         If mounted at an angle, you’ll need to calibrate the sensor by adjusting the default axis values.
 
