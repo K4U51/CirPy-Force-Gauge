@@ -7,25 +7,30 @@ G-Force gauge project, improved upon the demands of the track and touge.
     Computer with Arduino IDE installed
     Double-sided tape or Velcro (for mounting)
         Optional: Enclosure or case for a more polished look
+        
 🔧 Step-by-Step Instructions
+
     Step 1: Understand the Concept
         The project uses the built-in accelerometer on the Circuit Playground to detect G-forces.
         10 RGB LEDs on the board visually represent:
         Turning (left/right)
         Acceleration/Braking
         Vertical bumps or road roughness
+        
     Step 2: Set Up the Arduino IDE
         Install the Arduino IDE from arduino.cc.
         Add support for the Adafruit Circuit Playground board:
         Go to File > Preferences, and add this URL to the “Additional Board Manager URLs”:
                 https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
         Then go to Tools > Board > Board Manager, search for “Adafruit AVR Boards” and install it.
+        
     Step 3: Install Required Libraries
         In the Arduino IDE, go to Sketch > Include Library > Manage Libraries.
         Install:
         Adafruit Circuit Playground
         Adafruit Sensor
         Adafruit NeoPixel
+        
 Step 4: Upload the Code
         Use the example code provided in the Instructables post or from Adafruit’s Circuit Playground examples.
         Connect the board via USB, select the correct board and port under Tools, and upload the sketch.
