@@ -2,6 +2,7 @@
 G-Force gauge project, improved upon the demands of the track and touge.
 
 //https://www.instructables.com/Quick-20-G-force-Car-Gauge/
+
 You will need a recent version of the Arduino IDE (1.6+) along with the Circuit Playground libraries, drivers and board definitions from Adafruit. Check on the Adafruit site for the most up-to-date instructions. (I’m using an early release “Developer Edition” of the board, so there is a constant stream of improvements.)
 
 ![image](https://github.com/user-attachments/assets/a915b4f7-371d-4ef7-8c82-be4e379bccdc)
