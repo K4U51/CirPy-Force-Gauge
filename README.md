@@ -1,6 +1,36 @@
 # CirPy-Force-Gauge
 G-Force gauge project, improved upon the demands of the track and touge.
 
+🛠️ What You’ll Need
+    Adafruit Circuit Playground (Classic or Express)
+    USB cable for programming
+    Computer with Arduino IDE installed
+    Double-sided tape or Velcro (for mounting)
+        Optional: Enclosure or case for a more polished look
+🔧 Step-by-Step Instructions
+    Step 1: Understand the Concept
+        The project uses the built-in accelerometer on the Circuit Playground to detect G-forces.
+        10 RGB LEDs on the board visually represent:
+        Turning (left/right)
+        Acceleration/Braking
+        Vertical bumps or road roughness
+    Step 2: Set Up the Arduino IDE
+        Install the Arduino IDE from arduino.cc.
+        Add support for the Adafruit Circuit Playground board:
+        Go to File > Preferences, and add this URL to the “Additional Board Manager URLs”:
+                https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+        Then go to Tools > Board > Board Manager, search for “Adafruit AVR Boards” and install it.
+    Step 3: Install Required Libraries
+        In the Arduino IDE, go to Sketch > Include Library > Manage Libraries.
+        Install:
+        Adafruit Circuit Playground
+        Adafruit Sensor
+        Adafruit NeoPixel
+Step 4: Upload the Code
+        Use the example code provided in the Instructables post or from Adafruit’s Circuit Playground examples.
+        Connect the board via USB, select the correct board and port under Tools, and upload the sketch.
+
+# Source
 //https://www.instructables.com/Quick-20-G-force-Car-Gauge/
 
 You will need a recent version of the Arduino IDE (1.6+) along with the Circuit Playground libraries, drivers and board definitions from Adafruit. Check on the Adafruit site for the most up-to-date instructions. (I’m using an early release “Developer Edition” of the board, so there is a constant stream of improvements.)
@@ -23,7 +53,7 @@ There are better ways to do the tasks (a for-loop that takes pairs of range valu
 There is also code that displays all three axes in the serial plotter of your Arduino IDE. Open the serial plotter from the Tools menu in the Arduino IDE. Move, tilt and twist the Circuit Playground board to see the results in the graph.
 
 
-Axis and Orientation
+#Axis and Orientation
 
 It’s called a triple-axis (or 3-axis) accelerometer because it senses acceleration when moved (1) forwards and backwards, (2) from left to right and (3) up or down. It can sense movements on all three axes simultaneously.
 
@@ -53,3 +83,6 @@ IMPORTANT: Make sure your gauge is level when the car is at rest and on level gr
 Now, all you have to do is make a simple call to set individual pixels to specific colors - here, setting pixel #1 to blue (170 on the colorwheel):
 
     “CircuitPlayground.setPixelColor(1,CircuitPlayground.colorWheel(170));” 
+
+Downloads
+https://learn.adafruit.com/adafruit-circuit-playground-bluefruit/circuit-playground-bluefruit-circuitpython-libraries
