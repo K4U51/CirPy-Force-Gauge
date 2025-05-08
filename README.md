@@ -1,14 +1,14 @@
 # CirPy-Force-Gauge
 G-Force gauge project, improved upon the demands of the track and touge.
 
-🛠️ What You’ll Need
-    Adafruit Circuit Playground (Classic or Express)
-    USB cable for programming
-    Computer with Arduino IDE installed
-    Double-sided tape or Velcro (for mounting)
+# 🛠️ What You’ll Need
+  - Adafruit Circuit Playground (Classic or Express)
+  - USB cable for programming
+  -  Computer with Arduino IDE installed
+  -  Double-sided tape or Velcro (for mounting)
         Optional: Enclosure or case for a more polished look
         
-🔧 Step-by-Step Instructions
+# 🔧 Step-by-Step Instructions
 
     Step 1: Understand the Concept
         The project uses the built-in accelerometer on the Circuit Playground to detect G-forces.
