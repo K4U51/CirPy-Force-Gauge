@@ -113,166 +113,170 @@ Now, all you have to do is make a simple call to set individual pixels to specif
 # Codex
 
     #include <Adafruit_CircuitPlayground.h>
-    #include <bluefruit.h>
     
-    BLEUart bleuart; // BLE UART object
     
-    // Calibration and filtering
-    float offsetX = 0, offsetY = 0, offsetZ = 0;
-    float smoothX = 0, smoothY = 0, smoothZ = 0;
+    //Create some variables to hold the accelerometer readings
+    int turningForce = 0;
+    int bouncingForce = 0;
+    int brakeAccelerateForce = 0;
     
-    // Impact detection
-    unsigned long impactHoldTime = 1000;
-    unsigned long lastImpactTime = 0;
-    bool impactDetected = false;
-    
-    // BLE OTA Config
-    int gThresholdSlider = 25; // Default from slider (0–100 scale)
-    float mappedGThreshold = 2.0; // Mapped threshold from slider to 0–4G
-    
-    // Battery reading pin
-    #define VBATPIN A6
     
     void setup() {
-      Serial.begin(115200);
-      CircuitPlayground.begin();
-      delay(1000);
+      //while (!Serial);
+      Serial.begin(9600);
     
-      calibrateAccelerometer();
     
-      // BLE setup
-      Bluefruit.begin();
-      Bluefruit.setTxPower(4);
-      Bluefruit.setName("GForceGauge");
-    
-      bleuart.begin();
-      Bluefruit.Periph.setConnectCallback(connect_callback);
-      Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
-    
-      // OTA control via Bluefruit app sliders
-      Bluefruit.Central.setConnectCallback(central_connect_callback);
-    
-      Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-      Bluefruit.Advertising.addTxPower();
-      Bluefruit.Advertising.addService(bleuart);
-      Bluefruit.Advertising.start();
+      CircuitPlayground.begin(); //start-up the full Circuit-Playground library
     }
+    
+    
     
     void loop() {
-      // Read + filter G-force
-      float rawX = CircuitPlayground.motionX() - offsetX;
-      float rawY = CircuitPlayground.motionY() - offsetY;
-      float rawZ = CircuitPlayground.motionZ() - offsetZ;
+      // If you change the orientation of the board during mounting, this is where you change which axis maps to which G-force
+      // (multiplied by 100 to convert to easy integer format (7.69 * 100 = 769)
+      turningForce = CircuitPlayground.motionY() * 100;
+      //bouncingForce = (CircuitPlayground.motionX() * 100) + 900; //add back to "zero out" gravity on the vertical axis
+      brakeAccelerateForce = CircuitPlayground.motionZ() * 100;
     
-      smoothX = 0.8 * smoothX + 0.2 * rawX;
-      smoothY = 0.8 * smoothY + 0.2 * rawY;
-      smoothZ = 0.8 * smoothZ + 0.2 * rawZ;
     
-      float totalG = sqrt(smoothX * smoothX + smoothY * smoothY + smoothZ * smoothZ);
+      //------------------ SET UP GRAPHING TO AVOID JITTERY PLOTS -----------------------
+      //
+      Serial.print(2000);                //top limit
+      Serial.print(",    ");             //seperator
+      Serial.print(turningForce);        //the first variable for plotting
+      Serial.print(",    ");             //seperator
+      Serial.print(bouncingForce);       //the second variable for plotting
+      Serial.print(",    ");             //seperator
+      Serial.print(brakeAccelerateForce);//the third variable for plotting including line break
+      Serial.print(",    ");             //seperator
+      Serial.println(-2000);             //lower limit
     
-      CircuitPlayground.clearPixels();
     
-      // Map BLE slider to dynamic G-threshold
-      mappedGThreshold = map(gThresholdSlider, 0, 100, 10, 40) / 10.0; // 1.0–4.0G
+      // there is no "smoothing" function in this code, so add a small delay to avoid strobing the LEDs
+      delay(100);
     
-      // Turning logic (X)
-      renderForceLED(smoothX, 3, 1, 2, 3, 7, 8, 9); // center LED, right 3, left 3
     
-      // Accel/Braking logic (Y)
-      renderForceLED(smoothY, 4, 4, 4, 4, 5, 5, 5); // green front accel / red rear brake
+      //turn off all the pixels (LEDs) each time through the loop
+      CircuitPlayground.clearPixels();
     
-      // Z-axis bump detection
-      if (abs(smoothZ) > mappedGThreshold) {
-        lastImpactTime = millis();
-        impactDetected = true;
-      }
     
-      if (impactDetected && millis() - lastImpactTime < impactHoldTime) {
-        for (int i = 0; i < 10; i++) {
-          CircuitPlayground.setPixelColor(i, 128, 0, 128); // Purple bump flash
-        }
-      } else {
-        impactDetected = false;
-      }
     
-      // BLE stream
-      if (Bluefruit.connected()) {
-        char packet[128];
-        float battery = analogRead(VBATPIN) * 2 * 3.3 / 1023.0;
-        snprintf(packet, sizeof(packet), "X: %.2f, Y: %.2f, Z: %.2f, Bat: %.2fV\n", smoothX, smoothY, smoothZ, battery);
-        bleuart.print(packet);
-      }
     
-      delay(100);
+      // =================== Display the forces exerted during Left/Right turns ===========================
+      //                     (Change the <> values to fine tune the sensitivity)
+    
+    
+    
+      if (turningForce > -100 && turningForce < 100) {                         // if the car is going straight ahead the reading should be near zero
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170)); // so turn the top row center-line pixel blue
+    
+    
+        // if the car is turning RIGHT---------------------------------------
+      } else if (turningForce > -150 && turningForce < -100) {                 //very gentle turn
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170)); //
+        CircuitPlayground.setPixelColor(6, CircuitPlayground.colorWheel(170));
+      } else if (turningForce > -200 && turningForce < -150) {                 //gentle turn
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170)); //
+        CircuitPlayground.setPixelColor(6, CircuitPlayground.colorWheel(170)); //
+        CircuitPlayground.setPixelColor(5, CircuitPlayground.colorWheel(170));
+      } else if (turningForce > -250 && turningForce < -200) {                 //turn
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170)); //
+        CircuitPlayground.setPixelColor(6, CircuitPlayground.colorWheel(85)); //
+        CircuitPlayground.setPixelColor(5, CircuitPlayground.colorWheel(85));
+      } else if (turningForce > -300 && turningForce < -250) {                 //strong turn
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(85)); //
+        CircuitPlayground.setPixelColor(6, CircuitPlayground.colorWheel(42)); //
+        CircuitPlayground.setPixelColor(5, CircuitPlayground.colorWheel(42));
+      } else if (turningForce > -350 && turningForce < -300) {                 //Really Strong Turn
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(42)); //
+        CircuitPlayground.setPixelColor(6, CircuitPlayground.colorWheel(21)); //
+        CircuitPlayground.setPixelColor(5, CircuitPlayground.colorWheel(21));
+      } else if (turningForce < -350) {                                        //Really Really Strong Turn
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(21)); //
+        CircuitPlayground.setPixelColor(6, CircuitPlayground.colorWheel(245));
+        CircuitPlayground.setPixelColor(5, CircuitPlayground.colorWheel(255));
+    
+    
+    
+        // if the car is turning LEFT----------------------------------------
+      } else if (turningForce > 100 && turningForce < 150) {
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170));
+        CircuitPlayground.setPixelColor(8, CircuitPlayground.colorWheel(170));
+      } else if (turningForce > 150 && turningForce < 200) {
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170));
+        CircuitPlayground.setPixelColor(8, CircuitPlayground.colorWheel(170));
+        CircuitPlayground.setPixelColor(9, CircuitPlayground.colorWheel(170));
+      } else if (turningForce > 200 && turningForce < 250) {
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(170));
+        CircuitPlayground.setPixelColor(8, CircuitPlayground.colorWheel(85));
+        CircuitPlayground.setPixelColor(9, CircuitPlayground.colorWheel(85));
+      } else if (turningForce > 250 && turningForce < 300) {
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(85));
+        CircuitPlayground.setPixelColor(8, CircuitPlayground.colorWheel(42));
+        CircuitPlayground.setPixelColor(9, CircuitPlayground.colorWheel(42));
+      } else if (turningForce > 300 && turningForce < 350) {
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(42));
+        CircuitPlayground.setPixelColor(8, CircuitPlayground.colorWheel(21));
+        CircuitPlayground.setPixelColor(9, CircuitPlayground.colorWheel(21));
+      } else if (turningForce > 350) {
+        CircuitPlayground.setPixelColor(7, CircuitPlayground.colorWheel(21));
+        CircuitPlayground.setPixelColor(8, CircuitPlayground.colorWheel(245));
+        CircuitPlayground.setPixelColor(9, CircuitPlayground.colorWheel(255));
+      }
+    
+    
+      // ==================== Display the forces exerted during Braking and Acceleration ================
+      if (brakeAccelerateForce > -50 && brakeAccelerateForce < 50) {
+        //    CircuitPlayground.setPixelColor(0, CircuitPlayground.colorWheel(170));
+        //    CircuitPlayground.setPixelColor(4, CircuitPlayground.colorWheel(170));
+    
+    
+      // if car is accelerating (with damping for bounces)-----------------
+      } else if (brakeAccelerateForce > -100 && brakeAccelerateForce < -50 && bouncingForce < 200 && bouncingForce > -200) {
+        CircuitPlayground.setPixelColor(0, CircuitPlayground.colorWheel(42));
+        CircuitPlayground.setPixelColor(4, CircuitPlayground.colorWheel(42));
+      } else if (brakeAccelerateForce < -100 && bouncingForce < 200 && bouncingForce > -200) {
+        CircuitPlayground.setPixelColor(0, CircuitPlayground.colorWheel(85));
+        CircuitPlayground.setPixelColor(1, CircuitPlayground.colorWheel(85));
+        CircuitPlayground.setPixelColor(3, CircuitPlayground.colorWheel(85));
+        CircuitPlayground.setPixelColor(4, CircuitPlayground.colorWheel(85));
+        
+      //if car is braking--------------------------------------------------
+      } else if (brakeAccelerateForce > 50 && brakeAccelerateForce < 150) {
+        CircuitPlayground.setPixelColor(0, CircuitPlayground.colorWheel(21));
+        CircuitPlayground.setPixelColor(4, CircuitPlayground.colorWheel(21));
+      } else if (brakeAccelerateForce > 150) {
+        CircuitPlayground.setPixelColor(0, CircuitPlayground.colorWheel(0));
+        CircuitPlayground.setPixelColor(1, CircuitPlayground.colorWheel(0));
+        CircuitPlayground.setPixelColor(3, CircuitPlayground.colorWheel(0));
+        CircuitPlayground.setPixelColor(4, CircuitPlayground.colorWheel(0));
+      }
+    
+    
+    
+    
+      // ============================ Display the forces from Bouncing and Potholes ==============================
+      if (bouncingForce > -150 && bouncingForce < 150) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(220));
+    
+    
+      } else if ((bouncingForce > 150 && bouncingForce < 300) || (bouncingForce > -300 && bouncingForce < -150)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(220));
+      } else if ((bouncingForce > 300 && bouncingForce < 400) || (bouncingForce > -400 && bouncingForce < -300)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(220));
+      } else if ((bouncingForce > 400 && bouncingForce < 500) || (bouncingForce > -500 && bouncingForce < -400)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(20));
+      } else if ((bouncingForce > 500 && bouncingForce < 600) || (bouncingForce > -600 && bouncingForce < -500)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(15));
+      } else if ((bouncingForce > 600 && bouncingForce < 700) || (bouncingForce > -700 && bouncingForce < -600)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(10));
+      } else if ((bouncingForce > 700 && bouncingForce < 800) || (bouncingForce > -800 && bouncingForce < -700)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(5));
+      } else if ((bouncingForce > 800 && bouncingForce < 900) || (bouncingForce > -900 && bouncingForce < -800)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(3));
+      } else if ((bouncingForce > 900 && bouncingForce < 1000) || (bouncingForce > -1000 && bouncingForce < -900)) {
+        CircuitPlayground.setPixelColor(2, CircuitPlayground.colorWheel(0));
+    
+    
     }
-    
-    void calibrateAccelerometer() {
-      float sumX = 0, sumY = 0, sumZ = 0;
-      for (int i = 0; i < 25; i++) {
-        sumX += CircuitPlayground.motionX();
-        sumY += CircuitPlayground.motionY();
-        sumZ += CircuitPlayground.motionZ();
-        delay(40);
-      }
-      offsetX = sumX / 25;
-      offsetY = sumY / 25;
-      offsetZ = sumZ / 25;
-    }
-    
-    void renderForceLED(float force, int centerLED, int softLED, int medLED, int hardLED, int softNegLED, int medNegLED, int hardNegLED) {
-      float absForce = abs(force);
-    
-      if (force > 0) {
-        int hue = map(absForce * 10, 0, 40, 16000, 65535); // green to red
-        uint32_t color = CircuitPlayground.strip.ColorHSV(hue);
-        if (absForce > mappedGThreshold * 0.75) {
-          CircuitPlayground.setPixelColor(hardLED, color);
-        } else if (absForce > mappedGThreshold * 0.5) {
-          CircuitPlayground.setPixelColor(medLED, color);
-        } else if (absForce > mappedGThreshold * 0.25) {
-          CircuitPlayground.setPixelColor(softLED, color);
-        } else {
-          CircuitPlayground.setPixelColor(centerLED, color);
-        }
-      } else if (force < 0) {
-        int hue = map(absForce * 10, 0, 40, 16000, 65535);
-        uint32_t color = CircuitPlayground.strip.ColorHSV(hue);
-        if (absForce > mappedGThreshold * 0.75) {
-          CircuitPlayground.setPixelColor(hardNegLED, color);
-        } else if (absForce > mappedGThreshold * 0.5) {
-          CircuitPlayground.setPixelColor(medNegLED, color);
-        } else if (absForce > mappedGThreshold * 0.25) {
-          CircuitPlayground.setPixelColor(softNegLED, color);
-        } else {
-          CircuitPlayground.setPixelColor(centerLED, color);
-        }
-      }
-    }
-    
-    // BLE callbacks
-    void connect_callback(uint16_t conn_handle) {
-      Serial.println("BLE connected");
-    }
-    
-    void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
-      Serial.println("BLE disconnected");
-    }
-    
-    void central_connect_callback(uint16_t conn_handle) {
-      Serial.println("Central connected");
-    
-      // Example: update threshold from Bluefruit Connect app slider
-      bleuart.println("Send a value 0–100 to set sensitivity");
-    }
-    
-    // Optional: allow OTA config from slider
-    void serialEvent() {
-      if (bleuart.available()) {
-        String input = bleuart.readStringUntil('\n');
-        int val = input.toInt();
-        if (val >= 0 && val <= 100) {
-          gThresholdSlider = val;
-        }
-      }
-    }
-    
+    }//////////////////////////////////////// END OF MAIN LOOP /////////////////////////////////////////////
