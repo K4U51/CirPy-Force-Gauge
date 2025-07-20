@@ -1,0 +1,48 @@
+Step 5 and Beyond: Using the Bluefruit Connect App
+🔵 STEP 5: Connect to Your Board
+On your mobile device, install [Adafruit Bluefruit Connect]:
+
+📱 iOS: App Store
+
+📱 Android: Google Play
+
+Power up your Circuit Playground Bluefruit
+
+Open the app → Tap “Connect” → Choose GForceGauge
+
+📈 STEP 6: View Streaming Data
+You can now use the following tabs:
+
+🧭 UART Tab
+Tap UART → See live data: G: 1.32, G: 2.45, etc.
+
+This is raw serial output from bleuart.println()
+
+📊 Plotter Tab
+Tap Plotter
+
+Live graph of your G-force data
+
+Great for seeing spikes, crashes, and cornering force in real time
+
+🧪 STEP 7: Testing It
+Move, shake, or drop the board gently.
+
+Look for:
+
+Live values on UART tab
+
+Real-time graphs on Plotter tab
+
+NeoPixels turning red when force increases
+
+🎒 STEP 8: Optional Enhancements
+Add battery service: Bluefruit.Battery.begin();
+
+Send more data: Add direction (x, y, z)
+
+Control modes from phone (e.g., toggle NeoPixels via UART)
+
+OTA Settings: Use Bluefruit app sliders/buttons to send config thresholds
+
+Would you like me to show how to make the app control the board (like changing thresholds or clearing peak force) via BLE commands?
