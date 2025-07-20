@@ -4,10 +4,11 @@
 //Visualizes G-force on NeoPixels with color and brightness
 //Tracks peak G-force
 
-#include <Adafruit_CircuitPlayground.h>
-#include <Adafruit_LIS3DH.h>
-#include <Adafruit_Sensor.h>
 #include <bluefruit.h>
+#include <Adafruit_CircuitPlayground.h>
+#include <Adafruit_Sensor.h>
+
+// Removed #include <Adafruit_LIS3DH.h> to avoid conflicts
 
 // BLE UART object
 BLEUart bleuart;
@@ -24,7 +25,7 @@ void calibrate() {
   float x_sum = 0, y_sum = 0, z_sum = 0;
   for (int i = 0; i < calibrationSamples; i++) {
     sensors_event_t event;
-    CircuitPlayground.motionSensor.getEvent(&event);
+    CircuitPlayground.motion.getEvent(&event);  // Use motion, not motionSensor
     x_sum += event.acceleration.x;
     y_sum += event.acceleration.y;
     z_sum += event.acceleration.z;
@@ -60,7 +61,7 @@ void setup() {
 
 void loop() {
   sensors_event_t event;
-  CircuitPlayground.motionSensor.getEvent(&event);
+  CircuitPlayground.motion.getEvent(&event);  // Use motion, not motionSensor
 
   float x = event.acceleration.x - x_offset;
   float y = event.acceleration.y - y_offset;
@@ -68,8 +69,8 @@ void loop() {
 
   float force = sqrt(x * x + y * y + z * z);
 
-  // BLE Send
-  if (bleuart.connected()) {
+  // BLE Send - check connection properly
+  if (Bluefruit.connected()) {
     bleuart.print("G: ");
     bleuart.println(force, 2);
   }
@@ -90,6 +91,7 @@ void loop() {
   for (int i = 0; i < 10; i++) {
     CircuitPlayground.setPixelColor(i, color);
   }
+  CircuitPlayground.showPixels();
 
   delay(50);
 }
