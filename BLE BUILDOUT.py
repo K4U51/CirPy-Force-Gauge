@@ -1,8 +1,8 @@
-//Initializes BLE UART
-//Calibrates on boot
-//Sends live G-force over BLE
-//Visualizes G-force on NeoPixels with color and brightness
-//Tracks peak G-force
+// Initializes BLE UART
+// Calibrates on boot
+// Sends live G-force (X, Y, Z, Total) over BLE for graphing
+// Visualizes G-force on NeoPixels with color and brightness
+// Tracks peak G-force
 
 #include <bluefruit.h>
 #include <Adafruit_CircuitPlayground.h>
@@ -19,7 +19,7 @@ const int numPixels = 10;
 const int calibrationSamples = 100;
 const int smoothingSamples = 5;
 
-// G-force thresholds for color zones
+// G-force thresholds for NeoPixel color zones
 const float gThresholdGreen = 1.5;
 const float gThresholdYellow = 2.5;
 const float gThresholdRed = 3.5;
@@ -28,15 +28,14 @@ void setup() {
   Serial.begin(115200);
   while (!Serial);  // Wait for Serial Monitor
 
-  // Start core functions
+  // Initialize Circuit Playground Bluefruit
   CircuitPlayground.begin();
   CircuitPlayground.clearPixels();
 
-  // BLE Initialization
+  // Initialize BLE
   Bluefruit.begin();
-  Bluefruit.setTxPower(4);  // max is 4
+  Bluefruit.setTxPower(4);  // Max transmission power
   Bluefruit.setName("GForceGauge");
-
   bleuart.begin();
 
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
@@ -44,13 +43,13 @@ void setup() {
   Bluefruit.Advertising.addService(bleuart);
   Bluefruit.Advertising.start();
 
-  // Calibration
+  // Calibrate accelerometer
   Serial.println("Calibrating accelerometer...");
   calibrate();
 }
 
 void loop() {
-  // Read smoothed and calibrated values
+  // Smoothed and calibrated sensor readings
   float x = getSmoothedReading('x') - offsetX;
   float y = getSmoothedReading('y') - offsetY;
   float z = getSmoothedReading('z') - offsetZ;
@@ -60,26 +59,31 @@ void loop() {
   // Log to Serial
   Serial.print("G-Force: ");
   Serial.print(force, 3);
-  Serial.print(" | Peak: ");
-  Serial.print(peakForce, 3);
-  Serial.print(" @ ");
-  Serial.print(peakTimestamp / 1000.0, 2);
-  Serial.println("s");
+  Serial.print(" | X: ");
+  Serial.print(x, 3);
+  Serial.print(" Y: ");
+  Serial.print(y, 3);
+  Serial.print(" Z: ");
+  Serial.println(z, 3);
 
-  // Send over BLE
+  // Send data over BLE in graph-friendly format: X,Y,Z,Total
   if (Bluefruit.connected()) {
-    bleuart.print("G-Force: ");
-    bleuart.print(force, 3);
-    bleuart.print(" | Peak: ");
-    bleuart.println(peakForce, 3);
+    bleuart.print(x, 3);
+    bleuart.print(",");
+    bleuart.print(y, 3);
+    bleuart.print(",");
+    bleuart.print(z, 3);
+    bleuart.print(",");
+    bleuart.println(force, 3);
   }
 
-  // Track peak
+  // Update peak force tracking
   if (force > peakForce) {
     peakForce = force;
     peakTimestamp = millis();
   }
 
+  // Update NeoPixels based on force intensity
   updatePixels(force);
   delay(100);
 }
@@ -98,7 +102,7 @@ void calibrate() {
   offsetY = sumY / calibrationSamples;
   offsetZ = sumZ / calibrationSamples;
 
-  Serial.print("Offsets - X: ");
+  Serial.print("Calibration complete. Offsets - X: ");
   Serial.print(offsetX, 3);
   Serial.print(" Y: ");
   Serial.print(offsetY, 3);
