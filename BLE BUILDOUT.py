@@ -5,46 +5,36 @@
 //Tracks peak G-force
 
 #include <bluefruit.h>
-#include <Adafruit_CircuitPlayground_Bluefruit.h>  // Correct library for CPB Bluefruit
-#include <Adafruit_Sensor.h>  // Needed for sensors_event_t
+#include <Adafruit_CircuitPlayground.h>
 
+// BLE UART setup
 BLEUart bleuart;
 
-float x_offset = 0, y_offset = 0, z_offset = 0;
+// Calibration and smoothing
+float offsetX = 0, offsetY = 0, offsetZ = 0;
 float peakForce = 0;
-unsigned long peakTime = 0;
+unsigned long peakTimestamp = 0;
 
+const int numPixels = 10;
 const int calibrationSamples = 100;
+const int smoothingSamples = 5;
 
-void calibrate() {
-  float x_sum = 0, y_sum = 0, z_sum = 0;
-  Serial.println("Calibrating accelerometer, keep device still...");
-  for (int i = 0; i < calibrationSamples; i++) {
-    sensors_event_t event;
-    CircuitPlayground.motionSensor.getEvent(&event);  // Read accelerometer event
-    x_sum += event.acceleration.x;
-    y_sum += event.acceleration.y;
-    z_sum += event.acceleration.z;
-    delay(10);
-  }
-  x_offset = x_sum / calibrationSamples;
-  y_offset = y_sum / calibrationSamples;
-  z_offset = z_sum / calibrationSamples;
-
-  Serial.print("Calibration complete: ");
-  Serial.print(x_offset, 4); Serial.print(", ");
-  Serial.print(y_offset, 4); Serial.print(", ");
-  Serial.println(z_offset, 4);
-}
+// G-force thresholds for color zones
+const float gThresholdGreen = 1.5;
+const float gThresholdYellow = 2.5;
+const float gThresholdRed = 3.5;
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(10);
+  while (!Serial);  // Wait for Serial Monitor
 
+  // Start core functions
   CircuitPlayground.begin();
+  CircuitPlayground.clearPixels();
 
+  // BLE Initialization
   Bluefruit.begin();
-  Bluefruit.setTxPower(4);
+  Bluefruit.setTxPower(4);  // max is 4
   Bluefruit.setName("GForceGauge");
 
   bleuart.begin();
@@ -54,30 +44,97 @@ void setup() {
   Bluefruit.Advertising.addService(bleuart);
   Bluefruit.Advertising.start();
 
+  // Calibration
+  Serial.println("Calibrating accelerometer...");
   calibrate();
 }
 
 void loop() {
-  sensors_event_t event;
-  CircuitPlayground.motionSensor.getEvent(&event);
+  // Read smoothed and calibrated values
+  float x = getSmoothedReading('x') - offsetX;
+  float y = getSmoothedReading('y') - offsetY;
+  float z = getSmoothedReading('z') - offsetZ;
 
-  float fx = event.acceleration.x - x_offset;
-  float fy = event.acceleration.y - y_offset;
-  float fz = event.acceleration.z - z_offset;
+  float force = sqrt(x * x + y * y + z * z);
 
-  float force = sqrt(fx * fx + fy * fy + fz * fz);
+  // Log to Serial
+  Serial.print("G-Force: ");
+  Serial.print(force, 3);
+  Serial.print(" | Peak: ");
+  Serial.print(peakForce, 3);
+  Serial.print(" @ ");
+  Serial.print(peakTimestamp / 1000.0, 2);
+  Serial.println("s");
 
+  // Send over BLE
   if (Bluefruit.connected()) {
-    bleuart.print("G: ");
-    bleuart.println(force, 2);
+    bleuart.print("G-Force: ");
+    bleuart.print(force, 3);
+    bleuart.print(" | Peak: ");
+    bleuart.println(peakForce, 3);
   }
 
-  // Normalize force roughly between 1G and 5G (9.80665 m/s² per G)
-  float gNormalized = constrain((force - 9.80665) / (9.80665 * 4), 0.0, 1.0);
-  int hue = map(gNormalized * 100, 0, 100, 85, 0);  // Green to red
-  int brightnessValue = map(gNormalized * 100, 0, 100, 10, 255);
+  // Track peak
+  if (force > peakForce) {
+    peakForce = force;
+    peakTimestamp = millis();
+  }
 
-  uint32_t color = CircuitPlayground.strip.ColorHSV(hue * 182, 255, brightnessValue);
+  updatePixels(force);
+  delay(100);
+}
 
-  for (int i = 0; i < CircuitPlayground.strip.numPixels(); i++) {
-    Circu
+void calibrate() {
+  float sumX = 0, sumY = 0, sumZ = 0;
+
+  for (int i = 0; i < calibrationSamples; i++) {
+    sumX += CircuitPlayground.motionX();
+    sumY += CircuitPlayground.motionY();
+    sumZ += CircuitPlayground.motionZ();
+    delay(10);
+  }
+
+  offsetX = sumX / calibrationSamples;
+  offsetY = sumY / calibrationSamples;
+  offsetZ = sumZ / calibrationSamples;
+
+  Serial.print("Offsets - X: ");
+  Serial.print(offsetX, 3);
+  Serial.print(" Y: ");
+  Serial.print(offsetY, 3);
+  Serial.print(" Z: ");
+  Serial.println(offsetZ, 3);
+}
+
+float getSmoothedReading(char axis) {
+  float sum = 0;
+  for (int i = 0; i < smoothingSamples; i++) {
+    switch (axis) {
+      case 'x': sum += CircuitPlayground.motionX(); break;
+      case 'y': sum += CircuitPlayground.motionY(); break;
+      case 'z': sum += CircuitPlayground.motionZ(); break;
+    }
+    delay(5);
+  }
+  return sum / smoothingSamples;
+}
+
+void updatePixels(float force) {
+  uint32_t color;
+
+  if (force < gThresholdGreen) {
+    color = CircuitPlayground.strip.Color(0, 255, 0);  // Green
+  } else if (force < gThresholdYellow) {
+    color = CircuitPlayground.strip.Color(255, 255, 0);  // Yellow
+  } else if (force < gThresholdRed) {
+    color = CircuitPlayground.strip.Color(255, 165, 0);  // Orange
+  } else {
+    color = CircuitPlayground.strip.Color(255, 0, 0);  // Red
+  }
+
+  for (int i = 0; i < numPixels; i++) {
+    CircuitPlayground.setPixelColor(i, color);
+  }
+
+  CircuitPlayground.strip.show();
+}
