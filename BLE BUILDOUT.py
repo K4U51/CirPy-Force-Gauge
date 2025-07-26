@@ -1,144 +1,151 @@
-// Initializes BLE UART
-// Calibrates on boot
-// Sends live G-force (X, Y, Z, Total) over BLE for graphing
-// Visualizes G-force on NeoPixels with color and brightness
-// Tracks peak G-force
-
 #include <bluefruit.h>
 #include <Adafruit_CircuitPlayground.h>
 
-// BLE UART setup
+// Calibration variables
+float calX = 0, calY = 0, calZ = 0;
+
+// Raw forces
+float rawTurning = 0;
+float rawBounce = 0;
+float rawBrakeAccel = 0;
+
+// Smoothed forces (EMA smoothing)
+float smoothTurning = 0;
+float smoothBounce = 0;
+float smoothBrakeAccel = 0;
+const float smoothingFactor = 0.1;  // Smaller = smoother, 0.1 = decent smoothing
+
+// Thresholds
+int turnThreshold = 100;
+int brakeThreshold = 50;
+int bounceThreshold = 150;
+
 BLEUart bleuart;
 
-// Calibration and smoothing
-float offsetX = 0, offsetY = 0, offsetZ = 0;
-float peakForce = 0;
-unsigned long peakTimestamp = 0;
+// Helper to map force to 0-255 brightness with clamp
+uint8_t mapForceToBrightness(float force, float threshold) {
+  float val = fabs(force) / threshold;
+  if (val > 1.0) val = 1.0;
+  return (uint8_t)(val * 255);
+}
 
-const int numPixels = 10;
-const int calibrationSamples = 100;
-const int smoothingSamples = 5;
-
-// G-force thresholds for NeoPixel color zones
-const float gThresholdGreen = 1.5;
-const float gThresholdYellow = 2.5;
-const float gThresholdRed = 3.5;
+void calibrate() {
+  Serial.println("Calibrating accelerometer...");
+  float sumX = 0, sumY = 0, sumZ = 0;
+  for (int i = 0; i < 50; i++) {
+    sumX += CircuitPlayground.motionX();
+    sumY += CircuitPlayground.motionY();
+    sumZ += CircuitPlayground.motionZ();
+    delay(20);
+  }
+  calX = sumX / 50;
+  calY = sumY / 50;
+  calZ = sumZ / 50;
+  Serial.println("Calibration done.");
+}
 
 void setup() {
-  Serial.begin(115200);
-  while (!Serial);  // Wait for Serial Monitor
-
-  // Initialize Circuit Playground Bluefruit
+  Serial.begin(9600);
   CircuitPlayground.begin();
-  CircuitPlayground.clearPixels();
 
-  // Initialize BLE
   Bluefruit.begin();
-  Bluefruit.setTxPower(4);  // Max transmission power
-  Bluefruit.setName("GForceGauge");
+  Bluefruit.setName("G-Force Sensor");
   bleuart.begin();
 
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
+  Bluefruit.Advertising.addName();
   Bluefruit.Advertising.addService(bleuart);
-  Bluefruit.Advertising.start();
+  Bluefruit.Advertising.restartOnDisconnect(true);
+  Bluefruit.Advertising.setInterval(32, 244);
+  Bluefruit.Advertising.setFastTimeout(30);
+  Bluefruit.Advertising.start(0);
 
-  // Calibrate accelerometer
-  Serial.println("Calibrating accelerometer...");
   calibrate();
 }
 
-void loop() {
-  // Smoothed and calibrated sensor readings
-  float x = getSmoothedReading('x') - offsetX;
-  float y = getSmoothedReading('y') - offsetY;
-  float z = getSmoothedReading('z') - offsetZ;
-
-  float force = sqrt(x * x + y * y + z * z);
-
-  // Log to Serial
-  Serial.print("G-Force: ");
-  Serial.print(force, 3);
-  Serial.print(" | X: ");
-  Serial.print(x, 3);
-  Serial.print(" Y: ");
-  Serial.print(y, 3);
-  Serial.print(" Z: ");
-  Serial.println(z, 3);
-
-  // Send data over BLE in graph-friendly format: X,Y,Z,Total
+void sendBLEData() {
   if (Bluefruit.connected()) {
-    bleuart.print(x, 3);
-    bleuart.print(",");
-    bleuart.print(y, 3);
-    bleuart.print(",");
-    bleuart.print(z, 3);
-    bleuart.print(",");
-    bleuart.println(force, 3);
+    bleuart.print("Turning: "); bleuart.print(smoothTurning, 2);
+    bleuart.print(", Bounce: "); bleuart.print(smoothBounce, 2);
+    bleuart.print(", BrakeAccel: "); bleuart.print(smoothBrakeAccel, 2);
+    bleuart.println();
   }
-
-  // Update peak force tracking
-  if (force > peakForce) {
-    peakForce = force;
-    peakTimestamp = millis();
-  }
-
-  // Update NeoPixels based on force intensity
-  updatePixels(force);
-  delay(100);
 }
 
-void calibrate() {
-  float sumX = 0, sumY = 0, sumZ = 0;
+void loop() {
+  // Read raw accelerometer data (correct for calibration)
+  rawTurning = (CircuitPlayground.motionX() - calX) * 100;
+  rawBounce = (CircuitPlayground.motionY() - calY) * 100;
+  rawBrakeAccel = (CircuitPlayground.motionZ() - calZ) * 100;
 
-  for (int i = 0; i < calibrationSamples; i++) {
-    sumX += CircuitPlayground.motionX();
-    sumY += CircuitPlayground.motionY();
-    sumZ += CircuitPlayground.motionZ();
-    delay(10);
-  }
+  // Smooth with EMA filter
+  smoothTurning = smoothingFactor * rawTurning + (1 - smoothingFactor) * smoothTurning;
+  smoothBounce = smoothingFactor * rawBounce + (1 - smoothingFactor) * smoothBounce;
+  smoothBrakeAccel = smoothingFactor * rawBrakeAccel + (1 - smoothingFactor) * smoothBrakeAccel;
 
-  offsetX = sumX / calibrationSamples;
-  offsetY = sumY / calibrationSamples;
-  offsetZ = sumZ / calibrationSamples;
+  // Send live data over BLE
+  sendBLEData();
 
-  Serial.print("Calibration complete. Offsets - X: ");
-  Serial.print(offsetX, 3);
-  Serial.print(" Y: ");
-  Serial.print(offsetY, 3);
-  Serial.print(" Z: ");
-  Serial.println(offsetZ, 3);
-}
+  // Clear previous LED states
+  CircuitPlayground.clearPixels();
 
-float getSmoothedReading(char axis) {
-  float sum = 0;
-  for (int i = 0; i < smoothingSamples; i++) {
-    switch (axis) {
-      case 'x': sum += CircuitPlayground.motionX(); break;
-      case 'y': sum += CircuitPlayground.motionY(); break;
-      case 'z': sum += CircuitPlayground.motionZ(); break;
-    }
-    delay(5);
-  }
-  return sum / smoothingSamples;
-}
+  // ====== TURNING LEFT and RIGHT ======
+  // Left turn LEDs: 0,1
+  // Right turn LEDs: 3,4
+  // Center LED #2 lights dim blue if no turn
+  // Blue color (low intensity center, brighter outside)
 
-void updatePixels(float force) {
-  uint32_t color;
+  uint8_t turnBrightnessOuter = mapForceToBrightness(smoothTurning, turnThreshold);
+  uint8_t turnBrightnessCenter = turnBrightnessOuter / 3;
 
-  if (force < gThresholdGreen) {
-    color = CircuitPlayground.strip.Color(0, 255, 0);  // Green
-  } else if (force < gThresholdYellow) {
-    color = CircuitPlayground.strip.Color(255, 255, 0);  // Yellow
-  } else if (force < gThresholdRed) {
-    color = CircuitPlayground.strip.Color(255, 165, 0);  // Orange
+  if (smoothTurning < -turnThreshold) {
+    // Left turn (negative)
+    CircuitPlayground.setPixelColor(0, 0, 0, turnBrightnessOuter); // bright blue outer left
+    CircuitPlayground.setPixelColor(1, 0, 0, turnBrightnessOuter / 2); // mid blue
+  } else if (smoothTurning > turnThreshold) {
+    // Right turn (positive)
+    CircuitPlayground.setPixelColor(4, 0, 0, turnBrightnessOuter); // bright blue outer right
+    CircuitPlayground.setPixelColor(3, 0, 0, turnBrightnessOuter / 2); // mid blue
   } else {
-    color = CircuitPlayground.strip.Color(255, 0, 0);  // Red
+    // No turn: center LED #2 dim blue
+    CircuitPlayground.setPixelColor(2, 0, 0, 50);
   }
 
-  for (int i = 0; i < numPixels; i++) {
-    CircuitPlayground.setPixelColor(i, color);
+  // ====== ACCELERATION and BRAKING ======
+  // LEDs: 5,6,7,8,9
+  // Acceleration: red (negative z)
+  // Braking: green (positive z)
+  // Fade with outside LEDs brighter (5 and 9 outer, 6 and 8 mid, 7 center)
+
+  uint8_t accelBrightness = (smoothBrakeAccel < -brakeThreshold) ? mapForceToBrightness(-smoothBrakeAccel, brakeThreshold) : 0;
+  uint8_t brakeBrightness = (smoothBrakeAccel > brakeThreshold) ? mapForceToBrightness(smoothBrakeAccel, brakeThreshold) : 0;
+
+  if (accelBrightness > 0) {
+    CircuitPlayground.setPixelColor(5, accelBrightness, 0, 0);          // outer left - bright red
+    CircuitPlayground.setPixelColor(6, accelBrightness / 2, 0, 0);      // mid left
+    // LED 7 is reserved for bounce now, so skip here
+    CircuitPlayground.setPixelColor(8, accelBrightness / 2, 0, 0);      // mid right
+    CircuitPlayground.setPixelColor(9, accelBrightness, 0, 0);          // outer right - bright red
+  } else if (brakeBrightness > 0) {
+    CircuitPlayground.setPixelColor(5, 0, brakeBrightness, 0);          // outer left - bright green
+    CircuitPlayground.setPixelColor(6, 0, brakeBrightness / 2, 0);      // mid left
+    // LED 7 reserved for bounce
+    CircuitPlayground.setPixelColor(8, 0, brakeBrightness / 2, 0);      // mid right
+    CircuitPlayground.setPixelColor(9, 0, brakeBrightness, 0);          // outer right - bright green
   }
 
-  CircuitPlayground.strip.show();
+  // ====== BOUNCE ======
+  // LED 7 is used for bounce, purple color (red + blue)
+  // Intensity based on bounce magnitude, off if below threshold
+
+  if (fabs(smoothBounce) > bounceThreshold) {
+    uint8_t bounceBrightness = mapForceToBrightness(smoothBounce, bounceThreshold);
+    CircuitPlayground.setPixelColor(7, bounceBrightness / 2, 0, bounceBrightness / 2);  // Purple, dimmed a bit
+  } else {
+    // Ensure LED 7 is off if no bounce
+    CircuitPlayground.setPixelColor(7, 0, 0, 0);
+  }
+
+  delay(50);
 }
