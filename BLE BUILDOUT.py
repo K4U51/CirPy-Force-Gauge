@@ -1,151 +1,113 @@
-#include <bluefruit.h>
 #include <Adafruit_CircuitPlayground.h>
-
-// Calibration variables
-float calX = 0, calY = 0, calZ = 0;
-
-// Raw forces
-float rawTurning = 0;
-float rawBounce = 0;
-float rawBrakeAccel = 0;
-
-// Smoothed forces (EMA smoothing)
-float smoothTurning = 0;
-float smoothBounce = 0;
-float smoothBrakeAccel = 0;
-const float smoothingFactor = 0.1;  // Smaller = smoother, 0.1 = decent smoothing
-
-// Thresholds
-int turnThreshold = 100;
-int brakeThreshold = 50;
-int bounceThreshold = 150;
+#include <bluefruit.h>
 
 BLEUart bleuart;
 
-// Helper to map force to 0-255 brightness with clamp
-uint8_t mapForceToBrightness(float force, float threshold) {
-  float val = fabs(force) / threshold;
-  if (val > 1.0) val = 1.0;
-  return (uint8_t)(val * 255);
-}
-
-void calibrate() {
-  Serial.println("Calibrating accelerometer...");
-  float sumX = 0, sumY = 0, sumZ = 0;
-  for (int i = 0; i < 50; i++) {
-    sumX += CircuitPlayground.motionX();
-    sumY += CircuitPlayground.motionY();
-    sumZ += CircuitPlayground.motionZ();
-    delay(20);
-  }
-  calX = sumX / 50;
-  calY = sumY / 50;
-  calZ = sumZ / 50;
-  Serial.println("Calibration done.");
-}
+float offsetX = 0, offsetY = 0, offsetZ = 0;
+float smoothing = 0.1;
+float totalG = 0;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   CircuitPlayground.begin();
-
   Bluefruit.begin();
-  Bluefruit.setName("G-Force Sensor");
+  Bluefruit.setTxPower(4);
+  Bluefruit.setName("CPB Force Gauge");
   bleuart.begin();
-
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
-  Bluefruit.Advertising.addName();
   Bluefruit.Advertising.addService(bleuart);
-  Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.setInterval(32, 244);
-  Bluefruit.Advertising.setFastTimeout(30);
-  Bluefruit.Advertising.start(0);
+  Bluefruit.Advertising.start();
 
-  calibrate();
-}
-
-void sendBLEData() {
-  if (Bluefruit.connected()) {
-    bleuart.print("Turning: "); bleuart.print(smoothTurning, 2);
-    bleuart.print(", Bounce: "); bleuart.print(smoothBounce, 2);
-    bleuart.print(", BrakeAccel: "); bleuart.print(smoothBrakeAccel, 2);
-    bleuart.println();
-  }
+  // Calibrate
+  delay(1000);
+  offsetX = CircuitPlayground.motionX();
+  offsetY = CircuitPlayground.motionY();
+  offsetZ = CircuitPlayground.motionZ();
 }
 
 void loop() {
-  // Read raw accelerometer data (correct for calibration)
-  rawTurning = (CircuitPlayground.motionX() - calX) * 100;
-  rawBounce = (CircuitPlayground.motionY() - calY) * 100;
-  rawBrakeAccel = (CircuitPlayground.motionZ() - calZ) * 100;
+  float x = CircuitPlayground.motionX() - offsetX;
+  float y = CircuitPlayground.motionY() - offsetY;
+  float z = CircuitPlayground.motionZ() - offsetZ;
 
-  // Smooth with EMA filter
-  smoothTurning = smoothingFactor * rawTurning + (1 - smoothingFactor) * smoothTurning;
-  smoothBounce = smoothingFactor * rawBounce + (1 - smoothingFactor) * smoothBounce;
-  smoothBrakeAccel = smoothingFactor * rawBrakeAccel + (1 - smoothingFactor) * smoothBrakeAccel;
+  float turning = x;
+  float bounce = y + 9.8; // offset gravity
+  float accel = z;
 
-  // Send live data over BLE
-  sendBLEData();
+  totalG = sqrt(x*x + y*y + z*z);
 
-  // Clear previous LED states
-  CircuitPlayground.clearPixels();
-
-  // ====== TURNING LEFT and RIGHT ======
-  // Left turn LEDs: 0,1
-  // Right turn LEDs: 3,4
-  // Center LED #2 lights dim blue if no turn
-  // Blue color (low intensity center, brighter outside)
-
-  uint8_t turnBrightnessOuter = mapForceToBrightness(smoothTurning, turnThreshold);
-  uint8_t turnBrightnessCenter = turnBrightnessOuter / 3;
-
-  if (smoothTurning < -turnThreshold) {
-    // Left turn (negative)
-    CircuitPlayground.setPixelColor(0, 0, 0, turnBrightnessOuter); // bright blue outer left
-    CircuitPlayground.setPixelColor(1, 0, 0, turnBrightnessOuter / 2); // mid blue
-  } else if (smoothTurning > turnThreshold) {
-    // Right turn (positive)
-    CircuitPlayground.setPixelColor(4, 0, 0, turnBrightnessOuter); // bright blue outer right
-    CircuitPlayground.setPixelColor(3, 0, 0, turnBrightnessOuter / 2); // mid blue
-  } else {
-    // No turn: center LED #2 dim blue
-    CircuitPlayground.setPixelColor(2, 0, 0, 50);
-  }
-
-  // ====== ACCELERATION and BRAKING ======
-  // LEDs: 5,6,7,8,9
-  // Acceleration: red (negative z)
-  // Braking: green (positive z)
-  // Fade with outside LEDs brighter (5 and 9 outer, 6 and 8 mid, 7 center)
-
-  uint8_t accelBrightness = (smoothBrakeAccel < -brakeThreshold) ? mapForceToBrightness(-smoothBrakeAccel, brakeThreshold) : 0;
-  uint8_t brakeBrightness = (smoothBrakeAccel > brakeThreshold) ? mapForceToBrightness(smoothBrakeAccel, brakeThreshold) : 0;
-
-  if (accelBrightness > 0) {
-    CircuitPlayground.setPixelColor(5, accelBrightness, 0, 0);          // outer left - bright red
-    CircuitPlayground.setPixelColor(6, accelBrightness / 2, 0, 0);      // mid left
-    // LED 7 is reserved for bounce now, so skip here
-    CircuitPlayground.setPixelColor(8, accelBrightness / 2, 0, 0);      // mid right
-    CircuitPlayground.setPixelColor(9, accelBrightness, 0, 0);          // outer right - bright red
-  } else if (brakeBrightness > 0) {
-    CircuitPlayground.setPixelColor(5, 0, brakeBrightness, 0);          // outer left - bright green
-    CircuitPlayground.setPixelColor(6, 0, brakeBrightness / 2, 0);      // mid left
-    // LED 7 reserved for bounce
-    CircuitPlayground.setPixelColor(8, 0, brakeBrightness / 2, 0);      // mid right
-    CircuitPlayground.setPixelColor(9, 0, brakeBrightness, 0);          // outer right - bright green
-  }
-
-  // ====== BOUNCE ======
-  // LED 7 is used for bounce, purple color (red + blue)
-  // Intensity based on bounce magnitude, off if below threshold
-
-  if (fabs(smoothBounce) > bounceThreshold) {
-    uint8_t bounceBrightness = mapForceToBrightness(smoothBounce, bounceThreshold);
-    CircuitPlayground.setPixelColor(7, bounceBrightness / 2, 0, bounceBrightness / 2);  // Purple, dimmed a bit
-  } else {
-    // Ensure LED 7 is off if no bounce
-    CircuitPlayground.setPixelColor(7, 0, 0, 0);
-  }
+  sendBLE(turning, bounce, accel, totalG);
+  visualizeTurning(turning);
+  visualizeAccelBraking(accel);
+  visualizeBounce(bounce);
 
   delay(50);
+}
+
+void sendBLE(float x, float y, float z, float t) {
+  String data = String(x, 2) + "," + String(y, 2) + "," + String(z, 2) + "," + String(t, 2);
+  bleuart.print(data + "\n");
+}
+
+void visualizeTurning(float turning) {
+  int strength = min(abs(turning * 2), 3); // max 3 LEDs
+  uint32_t baseColor = CircuitPlayground.colorWheel(160); // blueish base
+
+  // Clear turning LEDs first
+  CircuitPlayground.setPixelColor(0, 0);
+  CircuitPlayground.setPixelColor(1, 0);
+  CircuitPlayground.setPixelColor(2, 0);
+  CircuitPlayground.setPixelColor(3, 0);
+  CircuitPlayground.setPixelColor(4, 0);
+
+  if (turning > 1.0) { // Right turn: 2,1,0
+    for (int i = 0; i < strength; i++) {
+      int led = 2 - i;  // 2,1,0
+      float scale = 1.0 - (i * 0.3);
+      CircuitPlayground.setPixelColor(led, dimColor(baseColor, scale));
+    }
+  } else if (turning < -1.0) { // Left turn: 2,3,4
+    for (int i = 0; i < strength; i++) {
+      int led = 2 + i; // 2,3,4
+      float scale = 1.0 - (i * 0.3);
+      CircuitPlayground.setPixelColor(led, dimColor(baseColor, scale));
+    }
+  }
+}
+
+void visualizeAccelBraking(float accel) {
+  uint32_t accelColor = CircuitPlayground.colorWheel(85);  // Red
+  uint32_t brakeColor = CircuitPlayground.colorWheel(0);   // Green
+
+  // Clear LEDs 5,6,8,9
+  CircuitPlayground.setPixelColor(5, 0);
+  CircuitPlayground.setPixelColor(6, 0);
+  CircuitPlayground.setPixelColor(8, 0);
+  CircuitPlayground.setPixelColor(9, 0);
+
+  if (accel > 1.0) { // Acceleration
+    CircuitPlayground.setPixelColor(5, accelColor);
+    CircuitPlayground.setPixelColor(6, accelColor);
+  } else if (accel < -1.0) { // Braking
+    CircuitPlayground.setPixelColor(8, brakeColor);
+    CircuitPlayground.setPixelColor(9, brakeColor);
+  }
+}
+
+void visualizeBounce(float bounce) {
+  // LED 7 for bounce
+  if (abs(bounce) > 3.0) {
+    CircuitPlayground.setPixelColor(7, 255, 255, 0); // Yellow
+  } else {
+    CircuitPlayground.setPixelColor(7, 0);
+  }
+}
+
+// Helper to dim a color by a scale factor (0.0 to 1.0)
+uint32_t dimColor(uint32_t color, float scale) {
+  uint8_t r = (uint8_t)(((color >> 16) & 0xFF) * scale);
+  uint8_t g = (uint8_t)(((color >> 8) & 0xFF) * scale);
+  uint8_t b = (uint8_t)((color & 0xFF) * scale);
+  return CircuitPlayground.strip.Color(r, g, b);
 }
