@@ -1,113 +1,107 @@
-#include <Adafruit_CircuitPlayground.h>
 #include <bluefruit.h>
+#include <Adafruit_CircuitPlayground.h>
 
+// BLE UART setup
 BLEUart bleuart;
 
+// Calibration
 float offsetX = 0, offsetY = 0, offsetZ = 0;
-float smoothing = 0.1;
-float totalG = 0;
 
 void setup() {
   Serial.begin(115200);
   CircuitPlayground.begin();
   Bluefruit.begin();
-  Bluefruit.setTxPower(4);
-  Bluefruit.setName("CPB Force Gauge");
   bleuart.begin();
+  Bluefruit.setTxPower(4);
+  Bluefruit.setName("ForceGauge");
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
   Bluefruit.Advertising.addService(bleuart);
   Bluefruit.Advertising.start();
 
-  // Calibrate
-  delay(1000);
-  offsetX = CircuitPlayground.motionX();
-  offsetY = CircuitPlayground.motionY();
-  offsetZ = CircuitPlayground.motionZ();
+  // Calibrate at rest
+  for (int i = 0; i < 100; i++) {
+    offsetX += CircuitPlayground.motionX();
+    offsetY += CircuitPlayground.motionY();
+    offsetZ += CircuitPlayground.motionZ();
+    delay(10);
+  }
+  offsetX /= 100;
+  offsetY /= 100;
+  offsetZ /= 100;
 }
 
 void loop() {
+  // Read and calibrate accelerometer
   float x = CircuitPlayground.motionX() - offsetX;
-  float y = CircuitPlayground.motionY() - offsetY;
+  float y = CircuitPlayground.motionY() - offsetY + 900;  // offset gravity
   float z = CircuitPlayground.motionZ() - offsetZ;
 
-  float turning = x;
-  float bounce = y + 9.8; // offset gravity
-  float accel = z;
+  float total = sqrt(x * x + y * y + z * z);
 
-  totalG = sqrt(x*x + y*y + z*z);
+  // Send over BLE UART
+  bleuart.print("X: "); bleuart.print(x);
+  bleuart.print(", Y: "); bleuart.print(y);
+  bleuart.print(", Z: "); bleuart.print(z);
+  bleuart.print(", Total: "); bleuart.println(total);
 
-  sendBLE(turning, bounce, accel, totalG);
-  visualizeTurning(turning);
-  visualizeAccelBraking(accel);
-  visualizeBounce(bounce);
+  // Serial plotter debug
+  Serial.print(x); Serial.print(",");
+  Serial.print(y); Serial.print(",");
+  Serial.print(z); Serial.print(",");
+  Serial.println(total);
 
-  delay(50);
-}
+  // Clear all LEDs
+  for (int i = 0; i < 10; i++) CircuitPlayground.setPixelColor(i, 0);
 
-void sendBLE(float x, float y, float z, float t) {
-  String data = String(x, 2) + "," + String(y, 2) + "," + String(z, 2) + "," + String(t, 2);
-  bleuart.print(data + "\n");
-}
-
-void visualizeTurning(float turning) {
-  int strength = min(abs(turning * 2), 3); // max 3 LEDs
-  uint32_t baseColor = CircuitPlayground.colorWheel(160); // blueish base
-
-  // Clear turning LEDs first
-  CircuitPlayground.setPixelColor(0, 0);
-  CircuitPlayground.setPixelColor(1, 0);
-  CircuitPlayground.setPixelColor(2, 0);
-  CircuitPlayground.setPixelColor(3, 0);
-  CircuitPlayground.setPixelColor(4, 0);
-
-  if (turning > 1.0) { // Right turn: 2,1,0
-    for (int i = 0; i < strength; i++) {
-      int led = 2 - i;  // 2,1,0
-      float scale = 1.0 - (i * 0.3);
-      CircuitPlayground.setPixelColor(led, dimColor(baseColor, scale));
-    }
-  } else if (turning < -1.0) { // Left turn: 2,3,4
-    for (int i = 0; i < strength; i++) {
-      int led = 2 + i; // 2,3,4
-      float scale = 1.0 - (i * 0.3);
-      CircuitPlayground.setPixelColor(led, dimColor(baseColor, scale));
+  // --- Turning Logic (X axis) ---
+  int turnForce = abs(x);
+  if (turnForce > 200) {
+    uint32_t color = colorWheel(map(turnForce, 200, 1500, 160, 0)); // Blue to Cyan
+    CircuitPlayground.setPixelColor(2, color); // Center LED always lit during turning
+    if (x > 200) {
+      CircuitPlayground.setPixelColor(1, color);
+      CircuitPlayground.setPixelColor(0, color);
+    } else if (x < -200) {
+      CircuitPlayground.setPixelColor(3, color);
+      CircuitPlayground.setPixelColor(4, color);
     }
   }
-}
 
-void visualizeAccelBraking(float accel) {
-  uint32_t accelColor = CircuitPlayground.colorWheel(85);  // Red
-  uint32_t brakeColor = CircuitPlayground.colorWheel(0);   // Green
-
-  // Clear LEDs 5,6,8,9
-  CircuitPlayground.setPixelColor(5, 0);
-  CircuitPlayground.setPixelColor(6, 0);
-  CircuitPlayground.setPixelColor(8, 0);
-  CircuitPlayground.setPixelColor(9, 0);
-
-  if (accel > 1.0) { // Acceleration
-    CircuitPlayground.setPixelColor(5, accelColor);
-    CircuitPlayground.setPixelColor(6, accelColor);
-  } else if (accel < -1.0) { // Braking
-    CircuitPlayground.setPixelColor(8, brakeColor);
-    CircuitPlayground.setPixelColor(9, brakeColor);
+  // --- Bouncing Logic (Y axis) ---
+  if (y > 250) {
+    uint32_t bounceColor = colorWheel(map(y, 250, 1500, 60, 0)); // Yellow to Red
+    CircuitPlayground.setPixelColor(7, bounceColor);
   }
+
+  // --- Acceleration/Braking (Z axis) ---
+  if (z > 150) {
+    // Braking – Green
+    CircuitPlayground.setPixelColor(5, 0, 255, 0);
+    CircuitPlayground.setPixelColor(6, 0, 200, 0);
+    CircuitPlayground.setPixelColor(8, 0, 150, 0);
+    CircuitPlayground.setPixelColor(9, 0, 100, 0);
+  } else if (z < -150) {
+    // Acceleration – Red
+    CircuitPlayground.setPixelColor(5, 255, 0, 0);
+    CircuitPlayground.setPixelColor(6, 200, 0, 0);
+    CircuitPlayground.setPixelColor(8, 150, 0, 0);
+    CircuitPlayground.setPixelColor(9, 100, 0, 0);
+  }
+
+  delay(50); // adjust for responsiveness
 }
 
-void visualizeBounce(float bounce) {
-  // LED 7 for bounce
-  if (abs(bounce) > 3.0) {
-    CircuitPlayground.setPixelColor(7, 255, 255, 0); // Yellow
+// Color wheel helper
+uint32_t colorWheel(byte pos) {
+  pos = 255 - pos;
+  if (pos < 85) {
+    return CircuitPlayground.strip.Color(255 - pos * 3, 0, pos * 3);
+  } else if (pos < 170) {
+    pos -= 85;
+    return CircuitPlayground.strip.Color(0, pos * 3, 255 - pos * 3);
   } else {
-    CircuitPlayground.setPixelColor(7, 0);
+    pos -= 170;
+    return CircuitPlayground.strip.Color(pos * 3, 255 - pos * 3, 0);
   }
-}
-
-// Helper to dim a color by a scale factor (0.0 to 1.0)
-uint32_t dimColor(uint32_t color, float scale) {
-  uint8_t r = (uint8_t)(((color >> 16) & 0xFF) * scale);
-  uint8_t g = (uint8_t)(((color >> 8) & 0xFF) * scale);
-  uint8_t b = (uint8_t)((color & 0xFF) * scale);
-  return CircuitPlayground.strip.Color(r, g, b);
 }
