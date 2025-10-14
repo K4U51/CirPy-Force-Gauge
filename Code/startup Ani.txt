@@ -1,0 +1,14 @@
+Action
+LED Behavior
+Startup
+Blue LEDs light one by one → flash white
+Turning
+LEDs (0–4 region) show green→yellow→orange→red by intensity
+Acceleration
+Red LEDs (5–9 region) hold ~0.5 s
+Braking
+Green LEDs (5–9 region) hold ~0.5 s
+Bounce Impact
+Purple flash on LED 7, fades away
+Smoothing
+Fluid color transitions even on rough surfaces
