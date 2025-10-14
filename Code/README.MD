@@ -1,7 +1,7 @@
 
-============================
 FORCE GAUGE PROJECT
-============================
+
+```============================
 Hardware: Adafruit Circuit Playground Bluefruit
 Features: Turning LEDs, Acceleration/Braking LEDs, Bounce LED, BLE UART, Smoothing, Startup animation
 
@@ -14,7 +14,7 @@ Modules:
 ============================
 
 
-
+```
 /* ===================== LIBRARIES ===================== */
 #include <bluefruit.h>
 #include <Adafruit_CircuitPlayground.h>
