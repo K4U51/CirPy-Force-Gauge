@@ -11,7 +11,7 @@ Modules:
 3. BounceLED (Handles purple bounce LED flashes)
 4. ForceGauge (Main sketch)
 5. ForceGauge.h / ForceGauge.cpp (Globals, config, and utility functions)
-============================
+============================```
 
 
 ```
