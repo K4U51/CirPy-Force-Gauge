@@ -12,15 +12,7 @@ Modules:
 5. ForceGauge.h / ForceGauge.cpp (Globals, config, and utility functions)
 ============================
 
-/************************************************************
- * FORCE GAUGE PROJECT - CIRCUIT PLAYGROUND BLUEFRUIT
- * Features:
- * - Turning LEDs (Left/Right) with intensity (Green → Red)
- * - Acceleration (Red) / Braking (Green) LEDs with hold
- * - Bounce LED (Purple flash) with fade
- * - BLE UART streaming
- * - Smoothing & calibration
- ************************************************************/
+'''
 
 /* ===================== LIBRARIES ===================== */
 #include <bluefruit.h>
