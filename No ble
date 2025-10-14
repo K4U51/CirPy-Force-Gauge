@@ -1,0 +1,94 @@
+#include <Adafruit_CircuitPlayground.h>
+
+float x, y, z;
+
+// Hold states for accel/brake
+float accelHold = 0;
+float brakeHold = 0;
+const float HOLD_DECAY = 0.95;  // how fast the color hold fades
+const int ACCEL_THRESHOLD = 150;
+const int BRAKE_THRESHOLD = -150;
+
+// Bounce logic
+float bounceLevel = 0;
+const float BOUNCE_DECAY = 0.90;
+const int BOUNCE_THRESHOLD = 250;
+
+// LED intensity smoothing
+float leftRightIntensity = 0;
+
+// Utility function
+uint32_t colorScale(uint8_t r, uint8_t g, uint8_t b, float scale) {
+  return CircuitPlayground.colorWheel(0); // dummy call to init NeoPixel
+  return CircuitPlayground.strip.Color(r * scale, g * scale, b * scale);
+}
+
+void setup() {
+  CircuitPlayground.begin();
+  CircuitPlayground.setBrightness(80);
+}
+
+void loop() {
+  // --- Read accelerometer ---
+  x = CircuitPlayground.motionX() * 100;
+  y = CircuitPlayground.motionY() * 100;
+  z = CircuitPlayground.motionZ() * 100;
+
+  // --- Turning (Y axis) ---
+  float turnMag = fabs(y);
+  leftRightIntensity = constrain(turnMag / 300.0, 0.0, 1.0);
+
+  // Map left/right into a gradient: green → yellow → orange → red
+  uint8_t r = map(leftRightIntensity * 100, 0, 100, 0, 255);
+  uint8_t g = map(leftRightIntensity * 100, 0, 100, 255, 100);
+  uint8_t b = 0;
+
+  // LEDs 0–4: turning display
+  for (int i = 0; i < 5; i++) {
+    CircuitPlayground.setPixelColor(i, r, g, b);
+  }
+
+  // --- Acceleration/Braking (X axis) ---
+  if (x > ACCEL_THRESHOLD) {
+    accelHold = 1.0; // acceleration hold
+  } else if (x < BRAKE_THRESHOLD) {
+    brakeHold = 1.0; // braking hold
+  }
+
+  accelHold *= HOLD_DECAY;
+  brakeHold *= HOLD_DECAY;
+
+  int accelR = 0;
+  int accelG = (int)(255 * accelHold);
+  int accelB = 0;
+
+  int brakeR = (int)(255 * brakeHold);
+  int brakeG = 0;
+  int brakeB = 0;
+
+  // LEDs 5–6 = accel, 8–9 = brake
+  for (int i = 5; i <= 6; i++)
+    CircuitPlayground.setPixelColor(i, accelR, accelG, accelB);
+  for (int i = 8; i <= 9; i++)
+    CircuitPlayground.setPixelColor(i, brakeR, brakeG, brakeB);
+
+  // --- Bounce Logic (Z axis) ---
+  if (fabs(z) > BOUNCE_THRESHOLD) {
+    bounceLevel = 1.0;
+  }
+  bounceLevel *= BOUNCE_DECAY;
+
+  int purpleR = (int)(150 * bounceLevel);
+  int purpleG = 0;
+  int purpleB = (int)(255 * bounceLevel);
+  CircuitPlayground.setPixelColor(7, purpleR, purpleG, purpleB);
+
+  // --- LED fade for inactive states ---
+  if (leftRightIntensity < 0.05 && accelHold < 0.05 && brakeHold < 0.05 && bounceLevel < 0.05) {
+    for (int i = 0; i < 10; i++) {
+      CircuitPlayground.setPixelColor(i, 0, 0, 0);
+    }
+  }
+
+  delay(20); // ~50Hz update rate
+}
