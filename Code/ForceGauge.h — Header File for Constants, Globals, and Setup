@@ -1,0 +1,40 @@
+#ifndef FORCEGAUGE_H
+#define FORCEGAUGE_H
+
+#include <bluefruit.h>
+#include <Adafruit_CircuitPlayground.h>
+#include <math.h>
+
+// -------------------- Global Settings --------------------
+const float SMOOTH_FACTOR = 0.15;     // For smoothing accelerometer data
+const unsigned long HOLD_TIME = 500;  // ms for accel/brake hold
+const float BOUNCE_THRESH = 1.0;      // Y-axis threshold for bounce
+const float TURN_THRESHOLDS[4] = {0.3, 0.7, 1.2, 1.8}; // Turning intensity
+
+// -------------------- Calibration Offsets --------------------
+extern float offsetX, offsetY, offsetZ;
+
+// -------------------- Smoothing --------------------
+extern float smoothX, smoothY, smoothZ;
+
+// -------------------- Accel/Brake Hold --------------------
+extern bool accelActive, brakeActive;
+extern unsigned long accelTimer, brakeTimer;
+
+// -------------------- Bounce Tracking --------------------
+extern float bounceFade;
+const float bounceFadeSpeed = 0.05;
+
+// -------------------- Function Prototypes --------------------
+void calibrateSensors();
+void startupAnimation();
+uint32_t getIntensityColor(float gForce);
+uint32_t colorWheel(byte pos);
+int getTurnLEDIndex(float turnForce, bool isRight);
+void readAndSmoothAccel();
+void applyTurningLogic();
+void applyAccelBrakeLogic();
+void applyBounceLogic();
+void updateLEDs();
+
+#endif
