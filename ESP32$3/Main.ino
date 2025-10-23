@@ -76,10 +76,18 @@ static void updateDotImage() {
 
 // ---------- Label updates ----------
 static void updateLabels() {
+    // Overall axis readouts (X/Y/Z)
     if (ui_label_gx) lv_label_set_text_fmt(ui_label_gx, "X: %.2f g", smoothed_ax);
     if (ui_label_gy) lv_label_set_text_fmt(ui_label_gy, "Y: %.2f g", smoothed_ay);
     if (ui_label_gz) lv_label_set_text_fmt(ui_label_gz, "Z: %.2f g", smoothed_az);
 
+    // Live directional G-forces (only show positive values for each direction)
+    if (ui_label_fwd)   lv_label_set_text_fmt(ui_label_fwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
+    if (ui_label_brake) lv_label_set_text_fmt(ui_label_brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
+    if (ui_label_left)  lv_label_set_text_fmt(ui_label_left,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
+    if (ui_label_right) lv_label_set_text_fmt(ui_label_right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
+
+    // Peak values
     if (ui_label_peak_accel) lv_label_set_text_fmt(ui_label_peak_accel, "Fwd: %.2f g", peak_accel);
     if (ui_label_peak_brake) lv_label_set_text_fmt(ui_label_peak_brake, "Brake: %.2f g", peak_brake);
     if (ui_label_peak_left)  lv_label_set_text_fmt(ui_label_peak_left,  "Left: %.2f g", peak_left);
