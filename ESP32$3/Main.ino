@@ -8,9 +8,7 @@
 #include "RTC_PCF85063.h"
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
-#include "ui.h"
-#include "GForceUI.h"
-#include "ui_hook.h"
+#include "ui.h"  // Only SquareLine UI objects
 
 extern RTC_DateTypeDef datetime;
 
@@ -70,20 +68,10 @@ static void updateDotImage() {
     int16_t target_x = DIAL_CENTER_X + (int16_t)((ax / G_MAX) * DIAL_SCALE);
     int16_t target_y = DIAL_CENTER_Y - (int16_t)((ay / G_MAX) * DIAL_SCALE);
 
-    int16_t dot_x = (int16_t)lerp(last_x, target_x, SMOOTH_FACTOR);
-    int16_t dot_y = (int16_t)lerp(last_y, target_y, SMOOTH_FACTOR);
+    last_x = (int16_t)lerp(last_x, target_x, SMOOTH_FACTOR);
+    last_y = (int16_t)lerp(last_y, target_y, SMOOTH_FACTOR);
 
-    last_x = dot_x;
-    last_y = dot_y;
-
-    if (ui_img_dot) lv_obj_set_pos(ui_img_dot, dot_x, dot_y);
-
-    // Optional: color based on magnitude
-    if (ui_img_dot) {
-        uint8_t intensity = (uint8_t)(fminf(mag / G_MAX, 1.0f) * 255.0f);
-        lv_obj_set_style_img_recolor(ui_img_dot, lv_color_make(255, 255 - intensity, 255 - intensity), 0);
-        lv_obj_set_style_img_recolor_opa(ui_img_dot, LV_OPA_COVER, 0);
-    }
+    if (ui_img_dot) lv_obj_set_pos(ui_img_dot, last_x, last_y);
 }
 
 // ---------- Label updates ----------
@@ -136,7 +124,7 @@ static void resetPeaksEventHandler(lv_event_t * e) {
 
 // ---------- Main ----------
 void app_main(void) {
-    printf("🚀 Starting G-Force UI (Refactored)\n");
+    printf("🚀 Starting Minimal G-Force UI\n");
 
     // Hardware init
     Wireless_Init();
@@ -150,7 +138,6 @@ void app_main(void) {
 
     // UI init
     ui_init();
-    hook_gforce_ui();
 
     if (ui_img_dot) lv_obj_set_pos(ui_img_dot, DIAL_CENTER_X, DIAL_CENTER_Y);
 
