@@ -14,12 +14,13 @@
 #include "ui.h"  // SquareLine UI
 
 // ---------- Config ----------
-#define UPDATE_RATE_MS 50
+#define UPDATE_RATE_MS 5      // fast updates for smooth UI
 #define SMOOTH_FACTOR 0.2f
 #define G_MAX 2.5f
 #define DIAL_CENTER_X 240
 #define DIAL_CENTER_Y 240
 #define DIAL_SCALE 90.0f
+#define LOG_BUFFER_SIZE 512   // bytes per SD buffer
 
 // ---------- Globals ----------
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
@@ -27,8 +28,13 @@ static float peak_accel = 0, peak_brake = 0, peak_lat = 0;
 static File logFile;
 static lv_obj_t *currentScreen = NULL;
 
+// SD logging buffer
+static char logBuffer[LOG_BUFFER_SIZE];
+static size_t logBufferIndex = 0;
+
 // ---------- Math ----------
 static inline float lerp_val(float a, float b, float t) { return a + (b - a) * t; }
+
 static void smoothAccel(float ax_in, float ay_in, float az_in) {
     smoothed_ax = smoothed_ax * (1.0f - SMOOTH_FACTOR) + ax_in * SMOOTH_FACTOR;
     smoothed_ay = smoothed_ay * (1.0f - SMOOTH_FACTOR) + ay_in * SMOOTH_FACTOR;
@@ -45,6 +51,8 @@ static void updatePeaks() {
 
 // ---------- Dot Movement ----------
 static void updateDotImage() {
+    if (currentScreen != ui_Gforce || !ui_Dot) return; // only on G-Force screen
+
     static int16_t last_x = DIAL_CENTER_X;
     static int16_t last_y = DIAL_CENTER_Y;
 
@@ -62,53 +70,58 @@ static void updateDotImage() {
     last_x = (int16_t)lerp_val(last_x, target_x, SMOOTH_FACTOR);
     last_y = (int16_t)lerp_val(last_y, target_y, SMOOTH_FACTOR);
 
-    if (ui_Dot) lv_obj_set_pos(ui_Dot, last_x, last_y);
+    lv_obj_set_pos(ui_Dot, last_x, last_y);
 }
 
 // ---------- Label Updates ----------
 static void updateLabels() {
-    if (ui_Fwd) {
-        lv_label_set_text_fmt(ui_Fwd, "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
-        lv_obj_set_style_text_font(ui_Fwd, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-    if (ui_Brake) {
-        lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
-        lv_obj_set_style_text_font(ui_Brake, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-    if (ui_Left) {
-        lv_label_set_text_fmt(ui_Left, "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
-        lv_obj_set_style_text_font(ui_Left, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-    if (ui_Right) {
-        lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
-        lv_obj_set_style_text_font(ui_Right, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
+    if(currentScreen != ui_Gforce) return; // only update G-force labels
 
-    if (ui_PeakAccel) {
-        lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
-        lv_obj_set_style_text_font(ui_PeakAccel, &lv_font_montserrat_32, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-    if (ui_PeakBrake) {
-        lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
-        lv_obj_set_style_text_font(ui_PeakBrake, &lv_font_montserrat_32, LV_PART_MAIN | LV_STATE_DEFAULT);
-    }
-    if (ui_PeakLat) {
-        lv_label_set_text_fmt(ui_PeakLat, "Lat: %.2f g", peak_lat);
-        lv_obj_set_style_text_font(ui_PeakLat, &lv_font_montserrat_32, LV_PART_MAIN | LV_STATE_DEFAULT);
+    if (ui_Fwd) lv_label_set_text_fmt(ui_Fwd, "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
+    if (ui_Brake) lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
+    if (ui_Left) lv_label_set_text_fmt(ui_Left, "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
+    if (ui_Right) lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
+
+    if (ui_PeakAccel) lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
+    if (ui_PeakBrake) lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
+    if (ui_PeakLat) lv_label_set_text_fmt(ui_PeakLat, "Lat: %.2f g", peak_lat);
+}
+
+// ---------- Non-blocking Logging ----------
+static void logDataBuffered() {
+    if (!logFile) return;
+
+    char line[128];
+    unsigned long micros_val = micros() % 1000000;
+    int len = snprintf(line, sizeof(line),
+        "%04d-%02d-%02d %02d:%02d:%02d.%06lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+        datetime.year, datetime.month, datetime.day,
+        datetime.hour, datetime.minute, datetime.second,
+        micros_val,
+        smoothed_ax, smoothed_ay, smoothed_az,
+        peak_accel, peak_brake, peak_lat);
+
+    if (logBufferIndex + len < LOG_BUFFER_SIZE) {
+        memcpy(logBuffer + logBufferIndex, line, len);
+        logBufferIndex += len;
+    } else {
+        // Flush buffer
+        logFile.write((const uint8_t*)logBuffer, logBufferIndex);
+        logFile.flush();
+        logBufferIndex = 0;
+
+        if(len < LOG_BUFFER_SIZE) {
+            memcpy(logBuffer, line, len);
+            logBufferIndex = len;
+        }
     }
 }
 
-// ---------- Logging ----------
-static void logData() {
-    if (!logFile) return;
-    unsigned long micros_val = micros() % 1000000;
-    logFile.printf("%04d-%02d-%02d %02d:%02d:%02d.%06lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-                   datetime.year, datetime.month, datetime.day,
-                   datetime.hour, datetime.minute, datetime.second,
-                   micros_val,
-                   smoothed_ax, smoothed_ay, smoothed_az,
-                   peak_accel, peak_brake, peak_lat);
+static void flushLogBuffer() {
+    if (!logFile || logBufferIndex == 0) return;
+    logFile.write((const uint8_t*)logBuffer, logBufferIndex);
     logFile.flush();
+    logBufferIndex = 0;
 }
 
 // ---------- Reset Peaks ----------
@@ -117,10 +130,22 @@ static void resetPeaksEventHandler(lv_event_t * e) {
     updateLabels();
 }
 
+// ---------- Swipe Handler ----------
+static void swipeEventHandler(lv_event_t * e) {
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if(dir == LV_DIR_LEFT) {
+        lv_scr_load(ui_Peaks);
+        currentScreen = ui_Peaks;
+    } else if(dir == LV_DIR_RIGHT) {
+        lv_scr_load(ui_Gforce);
+        currentScreen = ui_Gforce;
+    }
+}
+
 // ---------- Setup ----------
 void setup() {
     Serial.begin(115200);
-    Serial.println("🚀 Starting Minimal G-Force UI");
+    Serial.println("🚀 Starting G-Force UI (Buffered Logging)");
 
     Wireless_Init();
     I2C_Init();
@@ -131,8 +156,15 @@ void setup() {
     SD_Init();
     LVGL_Init();
 
+    // Register touch driver for gestures
+    lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.read_cb = Touch_Read;
+    lv_indev_drv_register(&indev_drv);
+
     ui_init();
-    lv_scr_load(ui_Gforce);  // Start directly on G-Force screen
+    lv_scr_load(ui_Gforce);
     currentScreen = ui_Gforce;
 
     lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
@@ -156,14 +188,20 @@ void setup() {
 
 // ---------- Loop ----------
 void loop() {
+    // Read and smooth accelerometer
     float ax, ay, az;
     QMI8658_Read_XYZ(&ax, &ay, &az);
     smoothAccel(ax, ay, az);
     updatePeaks();
+
+    // Update UI elements
     updateDotImage();
     updateLabels();
-    logData();
 
+    // Non-blocking logging
+    logDataBuffered();
+
+    // LVGL updates
     lv_timer_handler();
     delay(UPDATE_RATE_MS);
 }
