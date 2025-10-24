@@ -131,7 +131,10 @@ static void resetPeaksEventHandler(lv_event_t * e) {
 
 // ---------- Swipe Handler ----------
 static void swipeEventHandler(lv_event_t * e) {
-    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    lv_indev_t *indev = lv_indev_get_next(NULL);
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+
     if(dir == LV_DIR_LEFT) {
         lv_scr_load(ui_Peaks);
         currentScreen = ui_Peaks;
@@ -141,11 +144,21 @@ static void swipeEventHandler(lv_event_t * e) {
     }
 }
 
+// ---------- LVGL Task ----------
+void lvglTask(void *pvParameters) {
+    (void) pvParameters;
+    for(;;) {
+        lv_timer_handler();
+        vTaskDelay(pdMS_TO_TICKS(UPDATE_RATE_MS));
+    }
+}
+
 // ---------- Setup ----------
 void setup() {
     Serial.begin(115200);
     Serial.println("🚀 Starting G-Force UI (Buffered Logging)");
 
+    // Hardware init
     Wireless_Init();
     I2C_Init();
     PCF85063_Init();
@@ -155,40 +168,41 @@ void setup() {
     SD_Init();
     LVGL_Init();
 
-    // Register touch driver for gestures
+    // Reduce SPI speed to 40 MHz
+    ST7701_SetSPISpeed(40000000);
+
+    // Register touch driver
     lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = Touch_Read;
     lv_indev_drv_register(&indev_drv);
 
+    // Initialize UI objects
     ui_init();
 
-    // ---------- Load Screen 1 first ----------
-    lv_scr_load(ui_Screen1);
-    currentScreen = ui_Screen1;
-
-    // Swipe gestures
-    lv_obj_add_event_cb(ui_Screen1, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-
-    // ---------- Dot creation & visibility fix ----------
+    // Create ui_Dot as child of ui_Gforce
     if(!ui_Dot) {
         ui_Dot = lv_obj_create(ui_Gforce);
         lv_obj_set_size(ui_Dot, 12, 12);
         lv_obj_set_style_bg_color(ui_Dot, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_radius(ui_Dot, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_clear_flag(ui_Dot, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
     }
-    lv_obj_set_parent(ui_Dot, ui_Gforce);
-    lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
-    lv_obj_clear_flag(ui_Dot, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ui_Dot);
 
-    // Peaks reset button
+    // Add swipe callbacks
+    lv_obj_add_event_cb(ui_Screen1, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+
+    // Add reset peaks callback
     if (ui_ResetPeaks)
         lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
+
+    // Load initial screen
+    lv_scr_load(ui_Screen1);
+    currentScreen = ui_Screen1;
 
     // Open SD log
     char filename[128];
@@ -201,6 +215,9 @@ void setup() {
     } else {
         Serial.printf("⚠️ Could not open log file\n");
     }
+
+    // Start LVGL task
+    xTaskCreatePinnedToCore(lvglTask, "LVGL_Task", 4096, NULL, 1, NULL, 1);
 }
 
 // ---------- Loop ----------
@@ -217,8 +234,4 @@ void loop() {
 
     // Non-blocking logging
     logDataBuffered();
-
-    // LVGL updates
-    lv_timer_handler();
-    delay(UPDATE_RATE_MS);
 }
