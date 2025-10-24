@@ -4,7 +4,7 @@
 #include "PCF85063.h"
 #include "Gyro_QMI8658.h"
 #include "DisplayST7701S.h"
-#include "CST820.h"
+#include "Touch_CST820.h"
 #include "lvgl.h"
 #include "Wireless.h"
 #include "RTC_PCF85063.h"
