@@ -15,7 +15,7 @@
 
 // ---------- Config ----------
 #define UPDATE_RATE_MS 5      // fast updates for smooth UI
-#define SMOOTH_FACTOR 0.2f
+#define SMOOTH_SAMPLES 5      // moving average window
 #define G_MAX 2.5f
 #define DIAL_CENTER_X 240
 #define DIAL_CENTER_Y 240
@@ -23,6 +23,8 @@
 #define LOG_BUFFER_SIZE 512   // bytes per SD buffer
 
 // ---------- Globals ----------
+static float ax_buf[SMOOTH_SAMPLES] = {0}, ay_buf[SMOOTH_SAMPLES] = {0}, az_buf[SMOOTH_SAMPLES] = {0};
+static uint8_t buf_index = 0;
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
 static float peak_accel = 0, peak_brake = 0, peak_lat = 0;
 static File logFile;
@@ -35,14 +37,24 @@ static size_t logBufferIndex = 0;
 // ---------- Math ----------
 static inline float lerp_val(float a, float b, float t) { return a + (b - a) * t; }
 
-static void smoothAccel(float ax_in, float ay_in, float az_in) {
-    smoothed_ax = smoothed_ax * (1.0f - SMOOTH_FACTOR) + ax_in * SMOOTH_FACTOR;
-    smoothed_ay = smoothed_ay * (1.0f - SMOOTH_FACTOR) + ay_in * SMOOTH_FACTOR;
-    smoothed_az = smoothed_az * (1.0f - SMOOTH_FACTOR) + az_in * SMOOTH_FACTOR;
-}
+// ---------- Optimized Smoothing + Peaks ----------
+static void smoothAccel(float ax, float ay, float az) {
+    ax_buf[buf_index] = ax;
+    ay_buf[buf_index] = ay;
+    az_buf[buf_index] = az;
+    buf_index = (buf_index + 1) % SMOOTH_SAMPLES;
 
-// ---------- Peak Logic ----------
-static void updatePeaks() {
+    float sum_ax = 0, sum_ay = 0, sum_az = 0;
+    for (uint8_t i = 0; i < SMOOTH_SAMPLES; i++) {
+        sum_ax += ax_buf[i];
+        sum_ay += ay_buf[i];
+        sum_az += az_buf[i];
+    }
+    smoothed_ax = sum_ax / SMOOTH_SAMPLES;
+    smoothed_ay = sum_ay / SMOOTH_SAMPLES;
+    smoothed_az = sum_az / SMOOTH_SAMPLES;
+
+    // Update peaks
     if (smoothed_ax > peak_accel) peak_accel = smoothed_ax;
     if (smoothed_ax < -peak_brake) peak_brake = -smoothed_ax;
     float lateral = fabs(smoothed_ay);
@@ -67,8 +79,8 @@ static void updateDotImage() {
     int16_t target_x = DIAL_CENTER_X + (int16_t)((ax_clip / G_MAX) * DIAL_SCALE);
     int16_t target_y = DIAL_CENTER_Y - (int16_t)((ay_clip / G_MAX) * DIAL_SCALE);
 
-    last_x = (int16_t)lerp_val(last_x, target_x, SMOOTH_FACTOR);
-    last_y = (int16_t)lerp_val(last_y, target_y, SMOOTH_FACTOR);
+    last_x = (int16_t)lerp_val(last_x, target_x, 0.2f);
+    last_y = (int16_t)lerp_val(last_y, target_y, 0.2f);
 
     lv_obj_set_pos(ui_Dot, last_x, last_y);
 }
@@ -146,9 +158,9 @@ static void swipeEventHandler(lv_event_t * e) {
 
 // ---------- ST7701 Display Init Helper ----------
 void ST7701_Init_Display() {
-    tft.init(240, 240);        // width, height
+    tft.init(240, 240);
     tft.setRotation(0);
-    tft.setSPISpeed(40000000); // 40 MHz safe
+    tft.setSPISpeed(40000000);
     tft.fillScreen(ST77XX_BLACK);
 }
 
@@ -166,7 +178,6 @@ void setup() {
     Serial.begin(115200);
     Serial.println("🚀 Starting G-Force UI (Buffered Logging)");
 
-    // Hardware init
     Wireless_Init();
     I2C_Init();
     PCF85063_Init();
@@ -177,17 +188,14 @@ void setup() {
     SD_Init();
     LVGL_Init();
 
-    // Register touch driver
     lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = Touch_Read;
     lv_indev_drv_register(&indev_drv);
 
-    // Initialize UI objects
     ui_init();
 
-    // Create ui_Dot as child of ui_Gforce
     if(!ui_Dot) {
         ui_Dot = lv_obj_create(ui_Gforce);
         lv_obj_set_size(ui_Dot, 12, 12);
@@ -197,20 +205,16 @@ void setup() {
         lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
     }
 
-    // Add swipe callbacks
     lv_obj_add_event_cb(ui_Screen1, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
-    // Add reset peaks callback
     if (ui_ResetPeaks)
         lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
 
-    // Load initial screen
     lv_scr_load(ui_Screen1);
     currentScreen = ui_Screen1;
 
-    // Open SD log
     char filename[128];
     generateLogFilename(filename, sizeof(filename));
     logFile = SD.open(filename, FILE_WRITE);
@@ -222,22 +226,16 @@ void setup() {
         Serial.printf("⚠️ Could not open log file\n");
     }
 
-    // Start LVGL task
     xTaskCreatePinnedToCore(lvglTask, "LVGL_Task", 4096, NULL, 1, NULL, 1);
 }
 
 // ---------- Loop ----------
 void loop() {
-    // Read and smooth accelerometer
     float ax, ay, az;
     QMI8658_Read_XYZ(&ax, &ay, &az);
-    smoothAccel(ax, ay, az);
-    updatePeaks();
 
-    // Update UI elements
-    updateDotImage();
-    updateLabels();
-
-    // Non-blocking logging
-    logDataBuffered();
+    smoothAccel(ax, ay, az);    // smoothing + peak update
+    updateDotImage();            // move UI dot
+    updateLabels();              // update labels
+    logDataBuffered();           // log buffered
 }
