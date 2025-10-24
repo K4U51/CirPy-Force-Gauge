@@ -144,6 +144,14 @@ static void swipeEventHandler(lv_event_t * e) {
     }
 }
 
+// ---------- ST7701 Display Init Helper ----------
+void ST7701_Init_Display() {
+    tft.init(240, 240);        // width, height
+    tft.setRotation(0);
+    tft.setSPISpeed(40000000); // 40 MHz safe
+    tft.fillScreen(ST77XX_BLACK);
+}
+
 // ---------- LVGL Task ----------
 void lvglTask(void *pvParameters) {
     (void) pvParameters;
@@ -164,12 +172,10 @@ void setup() {
     PCF85063_Init();
     QMI8658_Init();
     LCD_Init();
+    ST7701_Init_Display();
     Touch_Init();
     SD_Init();
     LVGL_Init();
-
-    // Reduce SPI speed to 40 MHz
-    ST7701_SetSPISpeed(40000000);
 
     // Register touch driver
     lv_indev_drv_t indev_drv;
