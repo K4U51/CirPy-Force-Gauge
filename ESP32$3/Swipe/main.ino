@@ -2,8 +2,8 @@
 #include <math.h>
 #include "TCA9554PWR.h"
 #include "PCF85063.h"
-#include "QMI8658.h"
-#include "ST7701S.h"
+#include "Gyro_QMI8658.h"
+#include "DisplayST7701S.h"
 #include "CST820.h"
 #include "lvgl.h"
 #include "Wireless.h"
