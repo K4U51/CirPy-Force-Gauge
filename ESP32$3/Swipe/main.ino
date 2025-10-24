@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <Arduino.h>
 #include <math.h>
 #include "TCA9554PWR.h"
 #include "Gyro_QMI8658.h"
@@ -13,8 +13,6 @@
 #include "BAT_Driver.h"
 #include "ui.h"  // SquareLine UI
 
-extern RTC_DateTypeDef datetime;
-
 // ---------- Config ----------
 #define UPDATE_RATE_MS 50
 #define SMOOTH_FACTOR 0.2f
@@ -25,13 +23,12 @@ extern RTC_DateTypeDef datetime;
 
 // ---------- Globals ----------
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
-static float peak_accel = 0, peak_brake = 0, peak_lat = 0;  // single lateral peak
-static float ax, ay, az;  // raw sensor values
-static File logFile = File();
+static float peak_accel = 0, peak_brake = 0, peak_lat = 0;
+static File logFile;
 static lv_obj_t *currentScreen = NULL;
 
 // ---------- Math ----------
-static inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
+static inline float lerp_val(float a, float b, float t) { return a + (b - a) * t; }
 static void smoothAccel(float ax_in, float ay_in, float az_in) {
     smoothed_ax = smoothed_ax * (1.0f - SMOOTH_FACTOR) + ax_in * SMOOTH_FACTOR;
     smoothed_ay = smoothed_ay * (1.0f - SMOOTH_FACTOR) + ay_in * SMOOTH_FACTOR;
@@ -42,9 +39,7 @@ static void smoothAccel(float ax_in, float ay_in, float az_in) {
 static void updatePeaks() {
     if (smoothed_ax > peak_accel) peak_accel = smoothed_ax;
     if (smoothed_ax < -peak_brake) peak_brake = -smoothed_ax;
-
-    // lateral peak (largest of left/right)
-    float lateral = fabsf(smoothed_ay);
+    float lateral = fabs(smoothed_ay);
     if (lateral > peak_lat) peak_lat = lateral;
 }
 
@@ -64,24 +59,43 @@ static void updateDotImage() {
     int16_t target_x = DIAL_CENTER_X + (int16_t)((ax_clip / G_MAX) * DIAL_SCALE);
     int16_t target_y = DIAL_CENTER_Y - (int16_t)((ay_clip / G_MAX) * DIAL_SCALE);
 
-    last_x = (int16_t)lerp(last_x, target_x, SMOOTH_FACTOR);
-    last_y = (int16_t)lerp(last_y, target_y, SMOOTH_FACTOR);
+    last_x = (int16_t)lerp_val(last_x, target_x, SMOOTH_FACTOR);
+    last_y = (int16_t)lerp_val(last_y, target_y, SMOOTH_FACTOR);
 
-    if (ui_imgDot) lv_obj_set_pos(ui_imgDot, last_x, last_y);
+    if (ui_Dot) lv_obj_set_pos(ui_Dot, last_x, last_y);
 }
 
 // ---------- Label Updates ----------
 static void updateLabels() {
-    // Main directional labels
-    if (ui_labelFwd)   lv_label_set_text_fmt(ui_labelFwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
-    if (ui_labelBrake) lv_label_set_text_fmt(ui_labelBrake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
-    if (ui_labelLeft)  lv_label_set_text_fmt(ui_labelLeft,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
-    if (ui_labelRight) lv_label_set_text_fmt(ui_labelRight, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
+    if (ui_Fwd) {
+        lv_label_set_text_fmt(ui_Fwd, "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
+        lv_obj_set_style_text_font(ui_Fwd, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    if (ui_Brake) {
+        lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
+        lv_obj_set_style_text_font(ui_Brake, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    if (ui_Left) {
+        lv_label_set_text_fmt(ui_Left, "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
+        lv_obj_set_style_text_font(ui_Left, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    if (ui_Right) {
+        lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
+        lv_obj_set_style_text_font(ui_Right, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
 
-    // Peak labels
-    if (ui_labelPeakAccel) lv_label_set_text_fmt(ui_labelPeakAccel, "Fwd: %.2f g", peak_accel);
-    if (ui_labelPeakBrake) lv_label_set_text_fmt(ui_labelPeakBrake, "Brake: %.2f g", peak_brake);
-    if (ui_labelPeakLat)   lv_label_set_text_fmt(ui_labelPeakLat,   "Lat: %.2f g", peak_lat);
+    if (ui_PeakAccel) {
+        lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
+        lv_obj_set_style_text_font(ui_PeakAccel, &lv_font_montserrat_32, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    if (ui_PeakBrake) {
+        lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
+        lv_obj_set_style_text_font(ui_PeakBrake, &lv_font_montserrat_32, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    if (ui_PeakLat) {
+        lv_label_set_text_fmt(ui_PeakLat, "Lat: %.2f g", peak_lat);
+        lv_obj_set_style_text_font(ui_PeakLat, &lv_font_montserrat_32, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
 }
 
 // ---------- Logging ----------
@@ -97,41 +111,13 @@ static void logData() {
     logFile.flush();
 }
 
-// ---------- Helpers ----------
-static void generateLogFilename(char *filename, int max_len) {
-    PCF85063_Read_Time(&datetime);
-    int attempt = 0;
-    do {
-        unsigned long micros_val = micros() % 1000000;
-        snprintf(filename, max_len,
-                 "/sdcard/gforce_%04d%02d%02d_%02d%02d%02d_%06lu_%d.csv",
-                 datetime.year, datetime.month, datetime.day,
-                 datetime.hour, datetime.minute, datetime.second,
-                 micros_val, attempt);
-        logFile = SD.open(filename, FILE_READ);
-        if (logFile) { logFile.close(); attempt++; if (attempt > 999) break; }
-        else break;
-    } while (1);
-}
-
+// ---------- Reset Peaks ----------
 static void resetPeaksEventHandler(lv_event_t * e) {
     peak_accel = peak_brake = peak_lat = 0;
     updateLabels();
 }
 
-// ---------- Swipe ----------
-static void swipeEventHandler(lv_event_t * e) {
-    lv_gesture_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
-    if (dir == LV_GESTURE_DIR_LEFT) {
-        if (currentScreen == ui_scrSplash) { lv_scr_load(ui_scrGForce); currentScreen = ui_scrGForce; }
-        else if (currentScreen == ui_scrGForce) { lv_scr_load(ui_scrPeaks); currentScreen = ui_scrPeaks; }
-    } else if (dir == LV_GESTURE_DIR_RIGHT) {
-        if (currentScreen == ui_scrPeaks) { lv_scr_load(ui_scrGForce); currentScreen = ui_scrGForce; }
-        else if (currentScreen == ui_scrGForce) { lv_scr_load(ui_scrSplash); currentScreen = ui_scrSplash; }
-    }
-}
-
-// ---------- setup ----------
+// ---------- Setup ----------
 void setup() {
     Serial.begin(115200);
     Serial.println("🚀 Starting Minimal G-Force UI");
@@ -146,19 +132,15 @@ void setup() {
     LVGL_Init();
 
     ui_init();
-    lv_scr_load(ui_scrSplash);
-    currentScreen = ui_scrSplash;
+    lv_scr_load(ui_Gforce);  // Start directly on G-Force screen
+    currentScreen = ui_Gforce;
 
-    lv_obj_add_event_cb(ui_scrSplash, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_scrGForce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_scrPeaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
-    delay(2000);
-    lv_scr_load(ui_scrGForce);
-    currentScreen = ui_scrGForce;
-
-    if (ui_imgDot) lv_obj_set_pos(ui_imgDot, DIAL_CENTER_X, DIAL_CENTER_Y);
-    if (ui_btnResetPeaks) lv_obj_add_event_cb(ui_btnResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
+    if (ui_Dot) lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
+    if (ui_ResetPeaks)
+        lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
 
     char filename[128];
     generateLogFilename(filename, sizeof(filename));
@@ -172,8 +154,9 @@ void setup() {
     }
 }
 
-// ---------- loop ----------
+// ---------- Loop ----------
 void loop() {
+    float ax, ay, az;
     QMI8658_Read_XYZ(&ax, &ay, &az);
     smoothAccel(ax, ay, az);
     updatePeaks();
