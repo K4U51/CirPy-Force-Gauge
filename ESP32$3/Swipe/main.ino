@@ -51,7 +51,7 @@ static void updatePeaks() {
 
 // ---------- Dot Movement ----------
 static void updateDotImage() {
-    if (currentScreen != ui_Gforce || !ui_Dot) return; // only on G-Force screen
+    if (!ui_Dot || currentScreen != ui_Gforce) return;
 
     static int16_t last_x = DIAL_CENTER_X;
     static int16_t last_y = DIAL_CENTER_Y;
@@ -75,7 +75,7 @@ static void updateDotImage() {
 
 // ---------- Label Updates ----------
 static void updateLabels() {
-    if(currentScreen != ui_Gforce) return; // only update G-force labels
+    if(currentScreen != ui_Gforce) return;
 
     if (ui_Fwd) lv_label_set_text_fmt(ui_Fwd, "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
     if (ui_Brake) lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
@@ -105,7 +105,6 @@ static void logDataBuffered() {
         memcpy(logBuffer + logBufferIndex, line, len);
         logBufferIndex += len;
     } else {
-        // Flush buffer
         logFile.write((const uint8_t*)logBuffer, logBufferIndex);
         logFile.flush();
         logBufferIndex = 0;
@@ -164,16 +163,34 @@ void setup() {
     lv_indev_drv_register(&indev_drv);
 
     ui_init();
-    lv_scr_load(ui_Gforce);
-    currentScreen = ui_Gforce;
 
+    // ---------- Load Screen 1 first ----------
+    lv_scr_load(ui_Screen1);
+    currentScreen = ui_Screen1;
+
+    // Swipe gestures
+    lv_obj_add_event_cb(ui_Screen1, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
-    if (ui_Dot) lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
+    // ---------- Dot creation & visibility fix ----------
+    if(!ui_Dot) {
+        ui_Dot = lv_obj_create(ui_Gforce);
+        lv_obj_set_size(ui_Dot, 12, 12);
+        lv_obj_set_style_bg_color(ui_Dot, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(ui_Dot, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_clear_flag(ui_Dot, LV_OBJ_FLAG_CLICKABLE);
+    }
+    lv_obj_set_parent(ui_Dot, ui_Gforce);
+    lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
+    lv_obj_clear_flag(ui_Dot, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(ui_Dot);
+
+    // Peaks reset button
     if (ui_ResetPeaks)
         lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
 
+    // Open SD log
     char filename[128];
     generateLogFilename(filename, sizeof(filename));
     logFile = SD.open(filename, FILE_WRITE);
