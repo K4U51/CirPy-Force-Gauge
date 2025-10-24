@@ -28,7 +28,7 @@ static void swipeEventHandler(lv_event_t* e) {
 void app_main(void) {
     printf("🚀 Starting Minimal G-Force UI\n");
 
-    // Hardware init
+    // ---------- Hardware init ----------
     Wireless_Init();
     I2C_Init();
     PCF85063_Init();
@@ -38,19 +38,19 @@ void app_main(void) {
     SD_Init();
     LVGL_Init();
 
-    // UI init
+    // ---------- UI init ----------
     ui_init();
 
     // Set initial screen to splash
     lv_scr_load(ui_scrSplash);
     currentScreen = ui_scrSplash;
 
-    // Attach swipe handler to each screen
+    // Attach swipe gesture callbacks (after UI objects are created)
     lv_obj_add_event_cb(ui_scrSplash, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_scrGForce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_scrPeaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
-    // Optional: auto-transition from splash to G-Force after 2 seconds
+    // Optional: auto-transition splash to GForce after 2 seconds
     vTaskDelay(pdMS_TO_TICKS(2000));
     lv_scr_load(ui_scrGForce);
     currentScreen = ui_scrGForce;
@@ -62,7 +62,7 @@ void app_main(void) {
     if(ui_btnResetPeaks)
         lv_obj_add_event_cb(ui_btnResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
 
-    // Create log file
+    // ---------- Create log file ----------
     char filename[128];
     generateLogFilename(filename, sizeof(filename));
     logFile = fopen(filename, "w");
@@ -74,14 +74,16 @@ void app_main(void) {
         printf("⚠️ Could not open SD log file: %s\n", filename);
     }
 
-    // Main loop
+    // ---------- Main loop ----------
     while(1) {
         vTaskDelay(pdMS_TO_TICKS(UPDATE_RATE_MS));
         lv_timer_handler();
 
-        // G-Force updates
-        getAccelerometerData();
+        // Get and smooth accelerometer data
+        getAccelerometerData(); // populates ax, ay, az
         smoothAccel(ax, ay, az);
+
+        // Update peaks, dot position, labels, and log
         updatePeaks();
         updateDotImage();
         updateLabels();
