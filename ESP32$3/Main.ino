@@ -8,7 +8,7 @@
 #include "RTC_PCF85063.h"
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
-#include "ui.h"  // Only SquareLine UI objects
+#include "ui.h"  // SquareLine UI objects
 
 extern RTC_DateTypeDef datetime;
 
@@ -59,7 +59,7 @@ static void updateDotImage() {
     float ax = smoothed_ax;
     float ay = smoothed_ay;
 
-    float mag = sqrtf(ax*ax + ay*ay);
+    float mag = sqrtf(ax * ax + ay * ay);
     if (mag > G_MAX) {
         ax = (ax / mag) * G_MAX;
         ay = (ay / mag) * G_MAX;
@@ -71,34 +71,35 @@ static void updateDotImage() {
     last_x = (int16_t)lerp(last_x, target_x, SMOOTH_FACTOR);
     last_y = (int16_t)lerp(last_y, target_y, SMOOTH_FACTOR);
 
-    if (ui_img_dot) lv_obj_set_pos(ui_img_dot, last_x, last_y);
+    if (ui_imgDot) lv_obj_set_pos(ui_imgDot, last_x, last_y);
 }
 
 // ---------- Label updates ----------
 static void updateLabels() {
     // Overall axis readouts (X/Y/Z)
-    if (ui_label_gx) lv_label_set_text_fmt(ui_label_gx, "X: %.2f g", smoothed_ax);
-    if (ui_label_gy) lv_label_set_text_fmt(ui_label_gy, "Y: %.2f g", smoothed_ay);
-    if (ui_label_gz) lv_label_set_text_fmt(ui_label_gz, "Z: %.2f g", smoothed_az);
+    if (ui_labelGx) lv_label_set_text_fmt(ui_labelGx, "X: %.2f g", smoothed_ax);
+    if (ui_labelGy) lv_label_set_text_fmt(ui_labelGy, "Y: %.2f g", smoothed_ay);
+    if (ui_labelGz) lv_label_set_text_fmt(ui_labelGz, "Z: %.2f g", smoothed_az);
 
-    // Live directional G-forces (only show positive values for each direction)
-    if (ui_label_fwd)   lv_label_set_text_fmt(ui_label_fwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
-    if (ui_label_brake) lv_label_set_text_fmt(ui_label_brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
-    if (ui_label_left)  lv_label_set_text_fmt(ui_label_left,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
-    if (ui_label_right) lv_label_set_text_fmt(ui_label_right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
+    // Live directional G-forces
+    if (ui_labelFwd)   lv_label_set_text_fmt(ui_labelFwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
+    if (ui_labelBrake) lv_label_set_text_fmt(ui_labelBrake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
+    if (ui_labelLeft)  lv_label_set_text_fmt(ui_labelLeft,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
+    if (ui_labelRight) lv_label_set_text_fmt(ui_labelRight, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
 
     // Peak values
-    if (ui_label_peak_accel) lv_label_set_text_fmt(ui_label_peak_accel, "Fwd: %.2f g", peak_accel);
-    if (ui_label_peak_brake) lv_label_set_text_fmt(ui_label_peak_brake, "Brake: %.2f g", peak_brake);
-    if (ui_label_peak_left)  lv_label_set_text_fmt(ui_label_peak_left,  "Left: %.2f g", peak_left);
-    if (ui_label_peak_right) lv_label_set_text_fmt(ui_label_peak_right, "Right: %.2f g", peak_right);
+    if (ui_labelPeakAccel) lv_label_set_text_fmt(ui_labelPeakAccel, "Fwd: %.2f g", peak_accel);
+    if (ui_labelPeakBrake) lv_label_set_text_fmt(ui_labelPeakBrake, "Brake: %.2f g", peak_brake);
+    if (ui_labelPeakLeft)  lv_label_set_text_fmt(ui_labelPeakLeft,  "Left: %.2f g", peak_left);
+    if (ui_labelPeakRight) lv_label_set_text_fmt(ui_labelPeakRight, "Right: %.2f g", peak_right);
 }
 
 // ---------- Logging ----------
 static void logData() {
     if (!logFile) return;
     uint64_t micros = esp_timer_get_time() % 1000000;
-    fprintf(logFile, "%04d-%02d-%02d %02d:%02d:%02d.%06llu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+    fprintf(logFile,
+            "%04d-%02d-%02d %02d:%02d:%02d.%06llu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
             datetime.year, datetime.month, datetime.day,
             datetime.hour, datetime.minute, datetime.second,
             micros,
@@ -121,7 +122,7 @@ static void generateLogFilename(char *filename, int max_len) {
         FILE *f = fopen(filename, "r");
         if (f) { fclose(f); attempt++; if (attempt > 999) break; }
         else break;
-    } while(1);
+    } while (1);
 }
 
 // ---------- Reset Peaks Button Event ----------
@@ -147,11 +148,11 @@ void app_main(void) {
     // UI init
     ui_init();
 
-    if (ui_img_dot) lv_obj_set_pos(ui_img_dot, DIAL_CENTER_X, DIAL_CENTER_Y);
+    if (ui_imgDot) lv_obj_set_pos(ui_imgDot, DIAL_CENTER_X, DIAL_CENTER_Y);
 
     // Attach Reset Peaks button
-    if (ui_btn_reset_peaks)
-        lv_obj_add_event_cb(ui_btn_reset_peaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
+    if (ui_btnResetPeaks)
+        lv_obj_add_event_cb(ui_btnResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
 
     // Create log file
     char filename[128];
