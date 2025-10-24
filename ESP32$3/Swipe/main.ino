@@ -5,6 +5,7 @@
 #include "Gyro_QMI8658.h"
 #include "DisplayST7701S.h"
 #include "Touch_CST820.h"
+#include "I2C_Driver.h"
 #include "lvgl.h"
 #include "Wireless.h"
 #include "RTC_PCF85063.h"
