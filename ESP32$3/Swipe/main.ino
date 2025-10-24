@@ -11,6 +11,7 @@
 #include "ui.h"  // SquareLine UI objects
 
 extern RTC_DateTypeDef datetime;
+extern RTC_DateTypeDef datetime;
 
 // ---------- Config ----------
 #define UPDATE_RATE_MS 50
@@ -29,7 +30,7 @@ static float peak_brake = 0;
 static float peak_left  = 0;
 static float peak_right = 0;
 
-static FILE *logFile = NULL;
+static File logFile = File();
 static lv_obj_t *currentScreen = NULL;
 
 // For accelerometer read
@@ -95,14 +96,14 @@ static void updateLabels() {
 // ---------- Logging ----------
 static void logData() {
     if(!logFile) return;
-    uint64_t micros = esp_timer_get_time() % 1000000;
-    fprintf(logFile, "%04d-%02d-%02d %02d:%02d:%02d.%06llu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+    unsigned long micros_val = micros() % 1000000;
+    logFile.printf("%04d-%02d-%02d %02d:%02d:%02d.%06lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
             datetime.year, datetime.month, datetime.day,
             datetime.hour, datetime.minute, datetime.second,
-            micros,
+            micros_val,
             smoothed_ax, smoothed_ay, smoothed_az,
             peak_accel, peak_brake, peak_left, peak_right);
-    fflush(logFile);
+    logFile.flush();
 }
 
 // ---------- Generate unique log filename ----------
@@ -110,14 +111,14 @@ static void generateLogFilename(char *filename, int max_len) {
     PCF85063_Read_Time(&datetime);
     int attempt = 0;
     do {
-        uint64_t micros = esp_timer_get_time() % 1000000;
+        unsigned long micros_val = micros() % 1000000;
         snprintf(filename, max_len,
-                 "/sdcard/gforce_%04d%02d%02d_%02d%02d%02d_%06llu_%d.csv",
+                 "/sdcard/gforce_%04d%02d%02d_%02d%02d%02d_%06lu_%d.csv",
                  datetime.year, datetime.month, datetime.day,
                  datetime.hour, datetime.minute, datetime.second,
-                 micros, attempt);
-        FILE *f = fopen(filename, "r");
-        if(f) { fclose(f); attempt++; if(attempt > 999) break; }
+                 micros_val, attempt);
+        logFile = SD.open(filename, FILE_READ);
+        if(logFile) { logFile.close(); attempt++; if(attempt>999) break; }
         else break;
     } while(1);
 }
@@ -140,9 +141,10 @@ static void swipeEventHandler(lv_event_t * e) {
     }
 }
 
-// ---------- Main ----------
-void app_main(void) {
-    printf("🚀 Starting Minimal G-Force UI\n");
+// ---------- Arduino setup() ----------
+void setup() {
+    Serial.begin(115200);
+    Serial.println("🚀 Starting Minimal G-Force UI");
 
     // Hardware init
     Wireless_Init();
@@ -167,7 +169,7 @@ void app_main(void) {
     lv_obj_add_event_cb(ui_scrPeaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
     // Optional: auto-transition splash -> GForce
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    delay(2000);
     lv_scr_load(ui_scrGForce);
     currentScreen = ui_scrGForce;
 
@@ -181,27 +183,25 @@ void app_main(void) {
     // Create log file
     char filename[128];
     generateLogFilename(filename, sizeof(filename));
-    logFile = fopen(filename, "w");
+    logFile = SD.open(filename, FILE_WRITE);
     if(logFile) {
-        fprintf(logFile, "Timestamp,Ax,Ay,Az,PeakAccel,PeakBrake,PeakLeft,PeakRight\n");
-        fflush(logFile);
-        printf("✅ Logging to %s\n", filename);
+        logFile.printf("Timestamp,Ax,Ay,Az,PeakAccel,PeakBrake,PeakLeft,PeakRight\n");
+        logFile.flush();
+        Serial.printf("✅ Logging to %s\n", filename);
     } else {
-        printf("⚠️ Could not open SD log file: %s\n", filename);
+        Serial.printf("⚠️ Could not open SD log file: %s\n", filename);
     }
+}
 
-    // Main loop
-    while(1) {
-        vTaskDelay(pdMS_TO_TICKS(UPDATE_RATE_MS));
-        lv_timer_handler();
+// ---------- Arduino loop() ----------
+void loop() {
+    delay(UPDATE_RATE_MS);
+    lv_timer_handler();
 
-        getAccelerometerData();  // fills ax, ay, az
-        smoothAccel(ax, ay, az);
-        updatePeaks();
-        updateDotImage();
-        updateLabels();
-        logData();
-    }
-
-    if(logFile) fclose(logFile);
+    getAccelerometerData();  // fills ax, ay, az
+    smoothAccel(ax, ay, az);
+    updatePeaks();
+    updateDotImage();
+    updateLabels();
+    logData();
 }
