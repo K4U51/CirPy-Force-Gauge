@@ -11,7 +11,6 @@
 #include "ui.h"  // SquareLine UI objects
 
 extern RTC_DateTypeDef datetime;
-extern RTC_DateTypeDef datetime;
 
 // ---------- Config ----------
 #define UPDATE_RATE_MS 50
