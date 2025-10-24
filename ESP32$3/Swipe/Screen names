@@ -1,8 +1,21 @@
-Screen Name (SquareLine)
-Exported Name (C++)
-Splash
-ui_scrSplash
-G-Force Gauge
-ui_scrGForce
-Peaks
-ui_scrPeaks
+Splash:
+ui_imgSplash
+ui_btnLangEN
+ui_btnLangES
+
+GForce: 
+ui_imgDot
+ui_labelGx
+ui_labelGy
+ui_labelGz
+ui_labelFwd
+ui_labelBrake
+ui_labelLeft
+ui_labelRight
+
+Peaks: 
+ui_labelPeakAccel
+ui_labelPeakBrake
+ui_labelPeakLeft
+ui_labelPeakRight
+ui_btnResetPeaks
