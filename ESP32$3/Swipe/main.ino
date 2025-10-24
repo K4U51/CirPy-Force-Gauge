@@ -2,14 +2,18 @@
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_timer.h"
-
+#include "TCA9554PWR.h"
+#include "PCF85063.h"
+#include "QMI8658.h"
+#include "ST7701S.h"
+#include "CST820.h"
+#include "lvgl.h"
 #include "Wireless.h"
 #include "RTC_PCF85063.h"
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
-#include "ui.h"  // SquareLine UI objects
-
+#include "BAT_Driver.h"
+#include "ui.h"           // SquareLine Studio UI
 extern RTC_DateTypeDef datetime;
 
 // ---------- Config ----------
