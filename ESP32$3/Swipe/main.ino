@@ -6,30 +6,35 @@
 #include "Touch_CST820.h"
 #include "I2C_Driver.h"
 #include "lvgl.h"
+#include "Wireless.h"
 #include "RTC_PCF85063.h"
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
 #include "BAT_Driver.h"
-#include "ui.h"  // SquareLine UI
+#include "ui.h"  // SquareLine Studio generated UI
 
 // ---------- Config ----------
-#define UPDATE_RATE_MS 5
+#define UPDATE_RATE_MS 5      // LVGL task rate (smooth updates)
 #define SMOOTH_FACTOR 0.2f
 #define G_MAX 2.5f
 #define DIAL_CENTER_X 240
 #define DIAL_CENTER_Y 240
 #define DIAL_SCALE 90.0f
-#define LOG_BUFFER_SIZE 512
+#define LOG_BUFFER_SIZE 512   // SD log buffer size
 
 // ---------- Globals ----------
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
 static float peak_accel = 0, peak_brake = 0, peak_lat = 0;
 static File logFile;
+static lv_obj_t *currentScreen = NULL;
+
 static char logBuffer[LOG_BUFFER_SIZE];
 static size_t logBufferIndex = 0;
 
 // ---------- Math ----------
-static inline float lerp_val(float a, float b, float t) { return a + (b - a) * t; }
+static inline float lerp_val(float a, float b, float t) {
+    return a + (b - a) * t;
+}
 
 static void smoothAccel(float ax_in, float ay_in, float az_in) {
     smoothed_ax = smoothed_ax * (1.0f - SMOOTH_FACTOR) + ax_in * SMOOTH_FACTOR;
@@ -47,7 +52,7 @@ static void updatePeaks() {
 
 // ---------- Dot Movement ----------
 static void updateDotImage() {
-    if (!ui_Dot) return;
+    if (!ui_Dot || currentScreen != ui_Gforce) return;
 
     static int16_t last_x = DIAL_CENTER_X;
     static int16_t last_y = DIAL_CENTER_Y;
@@ -71,13 +76,21 @@ static void updateDotImage() {
 
 // ---------- Label Updates ----------
 static void updateLabels() {
+    if (currentScreen != ui_Gforce && currentScreen != ui_Peaks) return;
+
+    // Live G-force labels
     if (ui_Fwd)   lv_label_set_text_fmt(ui_Fwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
     if (ui_Brake) lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
     if (ui_Left)  lv_label_set_text_fmt(ui_Left,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
     if (ui_Right) lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
+
+    // Peak G-force labels
+    if (ui_PeakAccel) lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
+    if (ui_PeakBrake) lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
+    if (ui_PeakLat)   lv_label_set_text_fmt(ui_PeakLat,   "Lat: %.2f g", peak_lat);
 }
 
-// ---------- Non-blocking Logging ----------
+// ---------- Buffered Logging ----------
 static void logDataBuffered() {
     if (!logFile) return;
 
@@ -106,6 +119,34 @@ static void logDataBuffered() {
     }
 }
 
+static void flushLogBuffer() {
+    if (!logFile || logBufferIndex == 0) return;
+    logFile.write((const uint8_t*)logBuffer, logBufferIndex);
+    logFile.flush();
+    logBufferIndex = 0;
+}
+
+// ---------- Reset Peaks ----------
+static void resetPeaksEventHandler(lv_event_t * e) {
+    peak_accel = peak_brake = peak_lat = 0;
+    updateLabels();
+}
+
+// ---------- Swipe Handler ----------
+static void swipeEventHandler(lv_event_t * e) {
+    lv_indev_t *indev = lv_indev_get_next(NULL);
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+
+    if (dir == LV_DIR_LEFT) {
+        lv_scr_load(ui_Peaks);
+        currentScreen = ui_Peaks;
+    } else if (dir == LV_DIR_RIGHT) {
+        lv_scr_load(ui_Gforce);
+        currentScreen = ui_Gforce;
+    }
+}
+
 // ---------- Display Init ----------
 void ST7701_Init_Display() {
     tft.init();
@@ -128,27 +169,28 @@ void setup() {
     Serial.begin(115200);
     Serial.println("🚀 Starting GForce Gauge (Waveshare ESP32-S3)");
 
-    // Hardware init
+    // Init hardware
+    Wireless_Init();
     I2C_Init();
+    PCF85063_Init();
     QMI8658_Init();
     LCD_Init();
     ST7701_Init_Display();
     Touch_Init();
     SD_Init();
-    PCF85063_Init();
     LVGL_Init();
 
-    // Register touch driver
+    // Touch driver register
     lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = Touch_Read;
     lv_indev_drv_register(&indev_drv);
 
-    // Initialize UI
+    // Build UI
     ui_init();
 
-    // If no dot object in SquareLine, create one dynamically
+    // Create G-dot if missing
     if (!ui_Dot) {
         ui_Dot = lv_obj_create(ui_Gforce);
         lv_obj_set_size(ui_Dot, 12, 12);
@@ -158,10 +200,19 @@ void setup() {
         lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
     }
 
-    // Load G-force screen immediately
-    lv_scr_load(ui_Gforce);
+    // Gestures
+    lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
-    // Open SD log file
+    // Reset Peaks button
+    if (ui_ResetPeaks)
+        lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
+
+    // Load first screen
+    lv_scr_load(ui_Gforce);
+    currentScreen = ui_Gforce;
+
+    // Open SD log
     char filename[64];
     generateLogFilename(filename, sizeof(filename));
     logFile = SD.open(filename, FILE_WRITE);
@@ -170,25 +221,22 @@ void setup() {
         logFile.flush();
         Serial.printf("✅ Logging to %s\n", filename);
     } else {
-        Serial.println("⚠️ SD logging unavailable");
+        Serial.printf("⚠️ SD log open failed!\n");
     }
 
-    // Start LVGL background task
+    // LVGL background task
     xTaskCreatePinnedToCore(lvglTask, "LVGL_Task", 4096, NULL, 1, NULL, 1);
 }
 
 // ---------- Loop ----------
 void loop() {
-    // Read IMU
+    // Read gyro
     float ax, ay, az;
     QMI8658_Read_XYZ(&ax, &ay, &az);
+
     smoothAccel(ax, ay, az);
     updatePeaks();
-
-    // Update UI
     updateDotImage();
     updateLabels();
-
-    // Log
     logDataBuffered();
 }
