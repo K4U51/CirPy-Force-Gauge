@@ -1,8 +1,4 @@
-/* Using LVGL with Arduino requires some extra steps:
- * Be sure to read the docs here: https://docs.lvgl.io/master/get-started/platforms/arduino.html
- */
 
-#include "Wireless.h"
 #include "Gyro_QMI8658.h"
 #include "RTC_PCF85063.h"
 #include "SD_Card.h"
