@@ -11,16 +11,17 @@
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
 #include "BAT_Driver.h"
-#include "ui.h"  // SquareLine Studio generated UI
+#include "ui.h"  // SquareLine Studio UI
 
 // ---------- Config ----------
-#define UPDATE_RATE_MS 5      // LVGL task rate (smooth updates)
+#define UPDATE_RATE_MS 5
 #define SMOOTH_FACTOR 0.2f
 #define G_MAX 2.5f
 #define DIAL_CENTER_X 240
 #define DIAL_CENTER_Y 240
 #define DIAL_SCALE 90.0f
-#define LOG_BUFFER_SIZE 512   // SD log buffer size
+#define LOG_BUFFER_SIZE 512
+#define LOG_FLUSH_INTERVAL_MS 5000  // auto flush every 5 sec
 
 // ---------- Globals ----------
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
@@ -30,6 +31,7 @@ static lv_obj_t *currentScreen = NULL;
 
 static char logBuffer[LOG_BUFFER_SIZE];
 static size_t logBufferIndex = 0;
+static unsigned long lastFlush = 0;  // for timed flush
 
 // ---------- Math ----------
 static inline float lerp_val(float a, float b, float t) {
@@ -78,13 +80,11 @@ static void updateDotImage() {
 static void updateLabels() {
     if (currentScreen != ui_Gforce && currentScreen != ui_Peaks) return;
 
-    // Live G-force labels
     if (ui_Fwd)   lv_label_set_text_fmt(ui_Fwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
     if (ui_Brake) lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
     if (ui_Left)  lv_label_set_text_fmt(ui_Left,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
     if (ui_Right) lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
 
-    // Peak G-force labels
     if (ui_PeakAccel) lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
     if (ui_PeakBrake) lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
     if (ui_PeakLat)   lv_label_set_text_fmt(ui_PeakLat,   "Lat: %.2f g", peak_lat);
@@ -111,11 +111,8 @@ static void logDataBuffered() {
         logFile.write((const uint8_t*)logBuffer, logBufferIndex);
         logFile.flush();
         logBufferIndex = 0;
-
-        if (len < LOG_BUFFER_SIZE) {
-            memcpy(logBuffer, line, len);
-            logBufferIndex = len;
-        }
+        memcpy(logBuffer, line, len);
+        logBufferIndex = len;
     }
 }
 
@@ -169,7 +166,6 @@ void setup() {
     Serial.begin(115200);
     Serial.println("🚀 Starting GForce Gauge (Waveshare ESP32-S3)");
 
-    // Init hardware
     Wireless_Init();
     I2C_Init();
     PCF85063_Init();
@@ -180,17 +176,14 @@ void setup() {
     SD_Init();
     LVGL_Init();
 
-    // Touch driver register
     lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = Touch_Read;
     lv_indev_drv_register(&indev_drv);
 
-    // Build UI
     ui_init();
 
-    // Create G-dot if missing
     if (!ui_Dot) {
         ui_Dot = lv_obj_create(ui_Gforce);
         lv_obj_set_size(ui_Dot, 12, 12);
@@ -200,19 +193,15 @@ void setup() {
         lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
     }
 
-    // Gestures
     lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
 
-    // Reset Peaks button
     if (ui_ResetPeaks)
         lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
 
-    // Load first screen
     lv_scr_load(ui_Gforce);
     currentScreen = ui_Gforce;
 
-    // Open SD log
     char filename[64];
     generateLogFilename(filename, sizeof(filename));
     logFile = SD.open(filename, FILE_WRITE);
@@ -224,13 +213,11 @@ void setup() {
         Serial.printf("⚠️ SD log open failed!\n");
     }
 
-    // LVGL background task
     xTaskCreatePinnedToCore(lvglTask, "LVGL_Task", 4096, NULL, 1, NULL, 1);
 }
 
 // ---------- Loop ----------
 void loop() {
-    // Read gyro
     float ax, ay, az;
     QMI8658_Read_XYZ(&ax, &ay, &az);
 
@@ -239,4 +226,11 @@ void loop() {
     updateDotImage();
     updateLabels();
     logDataBuffered();
+
+    // Periodic flush to SD
+    unsigned long now = millis();
+    if (now - lastFlush >= LOG_FLUSH_INTERVAL_MS) {
+        flushLogBuffer();
+        lastFlush = now;
+    }
 }
