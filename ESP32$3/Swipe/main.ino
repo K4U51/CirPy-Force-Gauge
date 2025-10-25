@@ -11,37 +11,31 @@
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
 #include "BAT_Driver.h"
-#include "ui.h"  // SquareLine Studio UI
+#include "ui.h"  // SquareLine UI project (new gauge-only version)
 
 // ---------- Config ----------
-#define UPDATE_RATE_MS 5
+#define UPDATE_RATE_MS 10
 #define SMOOTH_FACTOR 0.2f
 #define G_MAX 2.5f
 #define DIAL_CENTER_X 240
 #define DIAL_CENTER_Y 240
 #define DIAL_SCALE 90.0f
 #define LOG_BUFFER_SIZE 512
-#define LOG_FLUSH_INTERVAL_MS 5000  // auto flush every 5 sec
 
 // ---------- Globals ----------
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
 static float peak_accel = 0, peak_brake = 0, peak_lat = 0;
 static File logFile;
-static lv_obj_t *currentScreen = NULL;
-
 static char logBuffer[LOG_BUFFER_SIZE];
 static size_t logBufferIndex = 0;
-static unsigned long lastFlush = 0;  // for timed flush
 
 // ---------- Math ----------
-static inline float lerp_val(float a, float b, float t) {
-    return a + (b - a) * t;
-}
+static inline float lerp_val(float a, float b, float t) { return a + (b - a) * t; }
 
-static void smoothAccel(float ax_in, float ay_in, float az_in) {
-    smoothed_ax = smoothed_ax * (1.0f - SMOOTH_FACTOR) + ax_in * SMOOTH_FACTOR;
-    smoothed_ay = smoothed_ay * (1.0f - SMOOTH_FACTOR) + ay_in * SMOOTH_FACTOR;
-    smoothed_az = smoothed_az * (1.0f - SMOOTH_FACTOR) + az_in * SMOOTH_FACTOR;
+static void smoothAccel(float ax, float ay, float az) {
+    smoothed_ax = smoothed_ax * (1.0f - SMOOTH_FACTOR) + ax * SMOOTH_FACTOR;
+    smoothed_ay = smoothed_ay * (1.0f - SMOOTH_FACTOR) + ay * SMOOTH_FACTOR;
+    smoothed_az = smoothed_az * (1.0f - SMOOTH_FACTOR) + az * SMOOTH_FACTOR;
 }
 
 // ---------- Peak Logic ----------
@@ -54,7 +48,7 @@ static void updatePeaks() {
 
 // ---------- Dot Movement ----------
 static void updateDotImage() {
-    if (!ui_Dot || currentScreen != ui_Gforce) return;
+    if (!ui_Dot) return;
 
     static int16_t last_x = DIAL_CENTER_X;
     static int16_t last_y = DIAL_CENTER_Y;
@@ -78,19 +72,17 @@ static void updateDotImage() {
 
 // ---------- Label Updates ----------
 static void updateLabels() {
-    if (currentScreen != ui_Gforce && currentScreen != ui_Peaks) return;
-
-    if (ui_Fwd)   lv_label_set_text_fmt(ui_Fwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
+    if (ui_Fwd) lv_label_set_text_fmt(ui_Fwd, "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
     if (ui_Brake) lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
-    if (ui_Left)  lv_label_set_text_fmt(ui_Left,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
+    if (ui_Left) lv_label_set_text_fmt(ui_Left, "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
     if (ui_Right) lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
 
     if (ui_PeakAccel) lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
     if (ui_PeakBrake) lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
-    if (ui_PeakLat)   lv_label_set_text_fmt(ui_PeakLat,   "Lat: %.2f g", peak_lat);
+    if (ui_PeakLat) lv_label_set_text_fmt(ui_PeakLat, "Lat: %.2f g", peak_lat);
 }
 
-// ---------- Buffered Logging ----------
+// ---------- Logging ----------
 static void logDataBuffered() {
     if (!logFile) return;
 
@@ -123,28 +115,7 @@ static void flushLogBuffer() {
     logBufferIndex = 0;
 }
 
-// ---------- Reset Peaks ----------
-static void resetPeaksEventHandler(lv_event_t * e) {
-    peak_accel = peak_brake = peak_lat = 0;
-    updateLabels();
-}
-
-// ---------- Swipe Handler ----------
-static void swipeEventHandler(lv_event_t * e) {
-    lv_indev_t *indev = lv_indev_get_next(NULL);
-    if (!indev) return;
-    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
-
-    if (dir == LV_DIR_LEFT) {
-        lv_scr_load(ui_Peaks);
-        currentScreen = ui_Peaks;
-    } else if (dir == LV_DIR_RIGHT) {
-        lv_scr_load(ui_Gforce);
-        currentScreen = ui_Gforce;
-    }
-}
-
-// ---------- Display Init ----------
+// ---------- Display ----------
 void ST7701_Init_Display() {
     tft.init();
     tft.setRotation(0);
@@ -176,33 +147,30 @@ void setup() {
     SD_Init();
     LVGL_Init();
 
+    // Touch input driver
     lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = Touch_Read;
     lv_indev_drv_register(&indev_drv);
 
+    // UI setup
     ui_init();
+    lv_scr_load(ui_Gforce); // start on gauge
+    Serial.println("✅ UI Loaded: GForce Gauge");
 
+    // Create dot if not present
     if (!ui_Dot) {
         ui_Dot = lv_obj_create(ui_Gforce);
-        lv_obj_set_size(ui_Dot, 12, 12);
-        lv_obj_set_style_bg_color(ui_Dot, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_radius(ui_Dot, LV_RADIUS_CIRCLE, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_size(ui_Dot, 14, 14);
+        lv_obj_set_style_bg_color(ui_Dot, lv_color_hex(0xFF0000), LV_PART_MAIN);
+        lv_obj_set_style_radius(ui_Dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
         lv_obj_clear_flag(ui_Dot, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
     }
 
-    lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-
-    if (ui_ResetPeaks)
-        lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
-
-    lv_scr_load(ui_Gforce);
-    currentScreen = ui_Gforce;
-
-    char filename[64];
+    // SD log file
+    char filename[128];
     generateLogFilename(filename, sizeof(filename));
     logFile = SD.open(filename, FILE_WRITE);
     if (logFile) {
@@ -210,9 +178,10 @@ void setup() {
         logFile.flush();
         Serial.printf("✅ Logging to %s\n", filename);
     } else {
-        Serial.printf("⚠️ SD log open failed!\n");
+        Serial.println("⚠️ Could not open log file");
     }
 
+    // LVGL task
     xTaskCreatePinnedToCore(lvglTask, "LVGL_Task", 4096, NULL, 1, NULL, 1);
 }
 
@@ -226,11 +195,4 @@ void loop() {
     updateDotImage();
     updateLabels();
     logDataBuffered();
-
-    // Periodic flush to SD
-    unsigned long now = millis();
-    if (now - lastFlush >= LOG_FLUSH_INTERVAL_MS) {
-        flushLogBuffer();
-        lastFlush = now;
-    }
 }
