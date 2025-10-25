@@ -6,7 +6,6 @@
 #include "Touch_CST820.h"
 #include "I2C_Driver.h"
 #include "lvgl.h"
-#include "Wireless.h"
 #include "RTC_PCF85063.h"
 #include "SD_Card.h"
 #include "LVGL_Driver.h"
@@ -14,21 +13,18 @@
 #include "ui.h"  // SquareLine UI
 
 // ---------- Config ----------
-#define UPDATE_RATE_MS 5      // fast updates for smooth UI
+#define UPDATE_RATE_MS 5
 #define SMOOTH_FACTOR 0.2f
 #define G_MAX 2.5f
 #define DIAL_CENTER_X 240
 #define DIAL_CENTER_Y 240
 #define DIAL_SCALE 90.0f
-#define LOG_BUFFER_SIZE 512   // bytes per SD buffer
+#define LOG_BUFFER_SIZE 512
 
 // ---------- Globals ----------
 static float smoothed_ax = 0, smoothed_ay = 0, smoothed_az = 0;
 static float peak_accel = 0, peak_brake = 0, peak_lat = 0;
 static File logFile;
-static lv_obj_t *currentScreen = NULL;
-
-// SD logging buffer
 static char logBuffer[LOG_BUFFER_SIZE];
 static size_t logBufferIndex = 0;
 
@@ -51,7 +47,7 @@ static void updatePeaks() {
 
 // ---------- Dot Movement ----------
 static void updateDotImage() {
-    if (!ui_Dot || currentScreen != ui_Gforce) return;
+    if (!ui_Dot) return;
 
     static int16_t last_x = DIAL_CENTER_X;
     static int16_t last_y = DIAL_CENTER_Y;
@@ -75,16 +71,10 @@ static void updateDotImage() {
 
 // ---------- Label Updates ----------
 static void updateLabels() {
-    if(currentScreen != ui_Gforce) return;
-
-    if (ui_Fwd) lv_label_set_text_fmt(ui_Fwd, "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
+    if (ui_Fwd)   lv_label_set_text_fmt(ui_Fwd,   "%.2f", smoothed_ax > 0 ? smoothed_ax : 0.0f);
     if (ui_Brake) lv_label_set_text_fmt(ui_Brake, "%.2f", smoothed_ax < 0 ? -smoothed_ax : 0.0f);
-    if (ui_Left) lv_label_set_text_fmt(ui_Left, "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
+    if (ui_Left)  lv_label_set_text_fmt(ui_Left,  "%.2f", smoothed_ay < 0 ? -smoothed_ay : 0.0f);
     if (ui_Right) lv_label_set_text_fmt(ui_Right, "%.2f", smoothed_ay > 0 ? smoothed_ay : 0.0f);
-
-    if (ui_PeakAccel) lv_label_set_text_fmt(ui_PeakAccel, "Fwd: %.2f g", peak_accel);
-    if (ui_PeakBrake) lv_label_set_text_fmt(ui_PeakBrake, "Brake: %.2f g", peak_brake);
-    if (ui_PeakLat) lv_label_set_text_fmt(ui_PeakLat, "Lat: %.2f g", peak_lat);
 }
 
 // ---------- Non-blocking Logging ----------
@@ -109,53 +99,25 @@ static void logDataBuffered() {
         logFile.flush();
         logBufferIndex = 0;
 
-        if(len < LOG_BUFFER_SIZE) {
+        if (len < LOG_BUFFER_SIZE) {
             memcpy(logBuffer, line, len);
             logBufferIndex = len;
         }
     }
 }
 
-static void flushLogBuffer() {
-    if (!logFile || logBufferIndex == 0) return;
-    logFile.write((const uint8_t*)logBuffer, logBufferIndex);
-    logFile.flush();
-    logBufferIndex = 0;
-}
-
-// ---------- Reset Peaks ----------
-static void resetPeaksEventHandler(lv_event_t * e) {
-    peak_accel = peak_brake = peak_lat = 0;
-    updateLabels();
-}
-
-// ---------- Swipe Handler ----------
-static void swipeEventHandler(lv_event_t * e) {
-    lv_indev_t *indev = lv_indev_get_next(NULL);
-    if (!indev) return;
-    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
-
-    if(dir == LV_DIR_LEFT) {
-        lv_scr_load(ui_Peaks);
-        currentScreen = ui_Peaks;
-    } else if(dir == LV_DIR_RIGHT) {
-        lv_scr_load(ui_Gforce);
-        currentScreen = ui_Gforce;
-    }
-}
-
-// ---------- ST7701 Display Init Helper ----------
+// ---------- Display Init ----------
 void ST7701_Init_Display() {
-    tft.init();        // TFT_eSPI handles width/height internally
+    tft.init();
     tft.setRotation(0);
     tft.fillScreen(ST77XX_BLACK);
-    Set_Backlight(100);  // max brightness
+    Set_Backlight(100);
 }
 
 // ---------- LVGL Task ----------
 void lvglTask(void *pvParameters) {
     (void) pvParameters;
-    for(;;) {
+    for (;;) {
         lv_timer_handler();
         vTaskDelay(pdMS_TO_TICKS(UPDATE_RATE_MS));
     }
@@ -164,17 +126,16 @@ void lvglTask(void *pvParameters) {
 // ---------- Setup ----------
 void setup() {
     Serial.begin(115200);
-    Serial.println("🚀 Starting G-Force UI (Waveshare ESP32-S3)");
+    Serial.println("🚀 Starting GForce Gauge (Waveshare ESP32-S3)");
 
     // Hardware init
-    Wireless_Init();
     I2C_Init();
-    PCF85063_Init();
     QMI8658_Init();
     LCD_Init();
     ST7701_Init_Display();
     Touch_Init();
     SD_Init();
+    PCF85063_Init();
     LVGL_Init();
 
     // Register touch driver
@@ -184,11 +145,11 @@ void setup() {
     indev_drv.read_cb = Touch_Read;
     lv_indev_drv_register(&indev_drv);
 
-    // Initialize UI objects
+    // Initialize UI
     ui_init();
 
-    // Create ui_Dot as child of ui_Gforce
-    if(!ui_Dot) {
+    // If no dot object in SquareLine, create one dynamically
+    if (!ui_Dot) {
         ui_Dot = lv_obj_create(ui_Gforce);
         lv_obj_set_size(ui_Dot, 12, 12);
         lv_obj_set_style_bg_color(ui_Dot, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -197,21 +158,11 @@ void setup() {
         lv_obj_set_pos(ui_Dot, DIAL_CENTER_X, DIAL_CENTER_Y);
     }
 
-    // Add swipe callbacks
-    lv_obj_add_event_cb(ui_Screen1, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_Gforce, swipeEventHandler, LV_EVENT_GESTURE, NULL);
-    lv_obj_add_event_cb(ui_Peaks, swipeEventHandler, LV_EVENT_GESTURE, NULL);
+    // Load G-force screen immediately
+    lv_scr_load(ui_Gforce);
 
-    // Add reset peaks callback
-    if (ui_ResetPeaks)
-        lv_obj_add_event_cb(ui_ResetPeaks, resetPeaksEventHandler, LV_EVENT_CLICKED, NULL);
-
-    // Load initial screen (splash)
-    lv_scr_load(ui_Screen1);
-    currentScreen = ui_Screen1;
-
-    // Open SD log
-    char filename[128];
+    // Open SD log file
+    char filename[64];
     generateLogFilename(filename, sizeof(filename));
     logFile = SD.open(filename, FILE_WRITE);
     if (logFile) {
@@ -219,25 +170,25 @@ void setup() {
         logFile.flush();
         Serial.printf("✅ Logging to %s\n", filename);
     } else {
-        Serial.printf("⚠️ Could not open log file\n");
+        Serial.println("⚠️ SD logging unavailable");
     }
 
-    // Start LVGL task
+    // Start LVGL background task
     xTaskCreatePinnedToCore(lvglTask, "LVGL_Task", 4096, NULL, 1, NULL, 1);
 }
 
 // ---------- Loop ----------
 void loop() {
-    // Read and smooth accelerometer
+    // Read IMU
     float ax, ay, az;
     QMI8658_Read_XYZ(&ax, &ay, &az);
     smoothAccel(ax, ay, az);
     updatePeaks();
 
-    // Update UI elements
+    // Update UI
     updateDotImage();
     updateLabels();
 
-    // Non-blocking logging
+    // Log
     logDataBuffered();
 }
