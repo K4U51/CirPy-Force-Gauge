@@ -2,7 +2,7 @@
 
 #include <lvgl.h>
 #include "lv_conf.h"
-#include <demos/lv_demos.h>
+//#include <demos/lv_demos.h>
 #include <esp_heap_caps.h>
 #include "Display_ST7701.h"
 #include "Touch_CST820.h"
@@ -23,3 +23,4 @@ void example_increase_lvgl_tick(void *arg);
 
 void Lvgl_Init(void);
 void Lvgl_Loop(void);
+
