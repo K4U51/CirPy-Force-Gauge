@@ -8,10 +8,10 @@
 #include "BAT_Driver.h"
 #include "Display_ST7701.h"
 #include "Touch_CST820.h"
-#include "ui.h"  // <-- SquareLine generated UI
+#include "ui.h"  // SquareLine generated UI
 
 // ------------------ Global Variables ------------------
-float x = 0, y = 0, z = 0;  // Accelerometer data
+float x = 0, y = 0, z = 0;  // Gyro/accelerometer data
 
 // ------------------ Driver Task ------------------
 void Driver_Loop(void *parameter)
@@ -21,7 +21,13 @@ void Driver_Loop(void *parameter)
         QMI8658_Loop();   // Updates x, y, z internally
         RTC_Loop();
         BAT_Get_Volts();
-        vTaskDelay(pdMS_TO_TICKS(100));
+
+        // Store latest gyro values globally
+        x = QMI8658_Get_Gx();
+        y = QMI8658_Get_Gy();
+        z = QMI8658_Get_Gz();
+
+        vTaskDelay(pdMS_TO_TICKS(50)); // Update every 50ms
     }
 }
 
@@ -34,16 +40,16 @@ void Driver_Init()
     TCA9554PWR_Init(0x00);
 
     // Enable LCD Power and Backlight
-    Set_EXIO(EXIO_PIN8, Low);   // Power Enable pin
+    Set_EXIO(EXIO_PIN8, Low);
     delay(50);
-    LCD_SetBackLight(100);      // Full brightness
+    LCD_SetBackLight(100); // Full brightness
 
     PCF85063_Init();
     QMI8658_Init();
     BAT_Init();
     Flash_test();
 
-    // Run sensor tasks on Core 0
+    // Start driver task on Core 0
     xTaskCreatePinnedToCore(
         Driver_Loop,
         "Driver Loop",
@@ -55,21 +61,21 @@ void Driver_Init()
     );
 }
 
-// ------------------ LVGL G-Force UI Update ------------------
+// ------------------ LVGL G-Force Update ------------------
 void Lvgl_GForce_Loop()
 {
-    // Map G-force to screen coordinates
-    float xpos = 240 + ((x / 9.81) * 150);
-    float ypos = 240 + ((y / 9.81) * 150);
+    // Map X/Y acceleration to display coordinates (480x480)
+    float xpos = 240 + ((x / 9.81f) * 150);
+    float ypos = 240 + ((y / 9.81f) * 150);
 
-    // Main G-force indicator
-    lv_obj_set_pos(dot, (int)xpos, (int)ypos);
+    // Move dot on screen
+    if(ui.dot) lv_obj_set_pos(ui.dot, (int)xpos, (int)ypos);
 
-    // Numeric labels
-    lv_label_set_text_fmt(ui_labelAccel, "Accel: %d", (int)max(y / 9.81 * 10, 0));
-    lv_label_set_text_fmt(ui_labelBrake, "Brake: %d", (int)abs(min(y / 9.81 * 10, 0)));
-    lv_label_set_text_fmt(ui_labelLeft,  "Left: %d", (int)abs(min(x / 9.81 * 10, 0)));
-    lv_label_set_text_fmt(ui_labelRight, "Right: %d", (int)max(x / 9.81 * 10, 0));
+    // Update numeric labels from SquareLine
+    if(ui.labelAccel) lv_label_set_text_fmt(ui.labelAccel, "Accel: %.2f", max(y / 9.81f, 0.0f));
+    if(ui.labelBrake) lv_label_set_text_fmt(ui.labelBrake, "Brake: %.2f", abs(min(y / 9.81f, 0.0f)));
+    if(ui.labelLeft)  lv_label_set_text_fmt(ui.labelLeft,  "Left: %.2f", abs(min(x / 9.81f, 0.0f)));
+    if(ui.labelRight) lv_label_set_text_fmt(ui.labelRight, "Right: %.2f", max(x / 9.81f, 0.0f));
 }
 
 // ------------------ Setup ------------------
@@ -78,25 +84,27 @@ void setup()
     Serial.begin(115200);
     Serial.println("System Booting...");
 
+    // Initialize drivers and sensors
     I2C_Init();
     Driver_Init();
 
-    // LCD and LVGL Setup
-    LCD_Init();      // Initialize ST7701 panel
-    Touch_Init();    // Initialize CST820 touch
-    Lvgl_Init();     // Initialize LVGL driver
+    // Waveshare demo display init
+    LCD_Init();
+    Touch_Init();     // Touch panel init
+    Lvgl_Init();      // LVGL driver init
 
-    ui_init();       // Load SquareLine project
-    LCD_SetBackLight(100);
+    // Load SquareLine UI assets
+    ui_init();               // Create screens and objects
+    lv_scr_load(ui.screen1); // Load main screen
 
-    SD_Init();       // Initialize SD last
+    SD_Init();               // Initialize SD last
     Serial.println("Setup Complete.");
 }
 
 // ------------------ Main Loop ------------------
 void loop()
 {
-    Lvgl_GForce_Loop();  // Update G-force UI
+    Lvgl_GForce_Loop();  // Update dot and numeric labels
     Lvgl_Loop();         // LVGL internal handler
-    delay(5);
+    delay(5);             // Small delay for scheduler
 }
