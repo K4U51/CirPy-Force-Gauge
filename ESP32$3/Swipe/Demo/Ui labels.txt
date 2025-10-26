@@ -1,0 +1,7 @@
+Key Object Names Fixed:
+	•	ui_Left - Left G-force label
+	•	ui_Right - Right G-force label
+	•	ui_Accel - Acceleration label
+	•	ui_Brake - Braking label
+	•	ui_dot - Moving dot indicator
+	•	ui_bgGauge - Background gauge image (not referenced in code, but available if needed)
