@@ -68,14 +68,28 @@ void Lvgl_GForce_Loop()
     float xpos = 240 + ((x / 9.81f) * 150);
     float ypos = 240 + ((y / 9.81f) * 150);
 
-    // Move dot on screen
-    if(ui.dot) lv_obj_set_pos(ui.dot, (int)xpos, (int)ypos);
+    // Clamp to screen bounds
+    xpos = constrain(xpos, 0, 479);
+    ypos = constrain(ypos, 0, 479);
+
+    // Move dot on screen - use actual SquareLine object names
+    if(ui_dot != NULL) {
+        lv_obj_set_pos(ui_dot, (int)xpos, (int)ypos);
+    }
 
     // Update numeric labels from SquareLine
-    if(ui.labelAccel) lv_label_set_text_fmt(ui.labelAccel, "Accel: %.2f", max(y / 9.81f, 0.0f));
-    if(ui.labelBrake) lv_label_set_text_fmt(ui.labelBrake, "Brake: %.2f", abs(min(y / 9.81f, 0.0f)));
-    if(ui.labelLeft)  lv_label_set_text_fmt(ui.labelLeft,  "Left: %.2f", abs(min(x / 9.81f, 0.0f)));
-    if(ui.labelRight) lv_label_set_text_fmt(ui.labelRight, "Right: %.2f", max(x / 9.81f, 0.0f));
+    if(ui_labelAccel != NULL) {
+        lv_label_set_text_fmt(ui_labelAccel, "Accel: %.2f", max(y / 9.81f, 0.0f));
+    }
+    if(ui_labelBrake != NULL) {
+        lv_label_set_text_fmt(ui_labelBrake, "Brake: %.2f", abs(min(y / 9.81f, 0.0f)));
+    }
+    if(ui_labelLeft != NULL) {
+        lv_label_set_text_fmt(ui_labelLeft, "Left: %.2f", abs(min(x / 9.81f, 0.0f)));
+    }
+    if(ui_labelRight != NULL) {
+        lv_label_set_text_fmt(ui_labelRight, "Right: %.2f", max(x / 9.81f, 0.0f));
+    }
 }
 
 // ------------------ Setup ------------------
@@ -85,8 +99,7 @@ void setup()
     Serial.println("System Booting...");
 
     // Initialize drivers and sensors
-    I2C_Init();
-    Driver_Init();
+    Driver_Init();  // Removed duplicate I2C_Init()
 
     // Waveshare demo display init
     LCD_Init();
@@ -95,7 +108,9 @@ void setup()
 
     // Load SquareLine UI assets
     ui_init();               // Create screens and objects
-    lv_scr_load(ui.screen1); // Load main screen
+    
+    // Load main screen - check your ui.h for exact screen name
+    lv_scr_load(ui_Screen1); // Adjust to match your SquareLine screen name
 
     SD_Init();               // Initialize SD last
     Serial.println("Setup Complete.");
@@ -106,5 +121,5 @@ void loop()
 {
     Lvgl_GForce_Loop();  // Update dot and numeric labels
     Lvgl_Loop();         // LVGL internal handler
-    delay(5);             // Small delay for scheduler
+    delay(5);            // Small delay for scheduler
 }
