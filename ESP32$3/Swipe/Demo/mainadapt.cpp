@@ -101,10 +101,13 @@ void setup()
     // Initialize drivers and sensors
     Driver_Init();
 
-    // Waveshare demo display init
+    // Waveshare display init
     LCD_Init();
     Touch_Init();     // Touch panel init
     Lvgl_Init();      // LVGL driver init
+
+    // IMPORTANT: Remove the demo label that Lvgl_Init() creates
+    lv_obj_clean(lv_scr_act());
 
     // Load SquareLine UI assets
     ui_init();               // Create screens and objects
@@ -120,6 +123,6 @@ void setup()
 void loop()
 {
     Lvgl_GForce_Loop();  // Update dot and numeric labels
-    Lvgl_Loop();         // LVGL internal handler
+    Lvgl_Loop();         // LVGL internal handler (calls lv_timer_handler)
     delay(5);            // Small delay for scheduler
 }
