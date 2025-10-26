@@ -77,7 +77,7 @@ void Lvgl_GForce_Loop()
         lv_obj_set_pos(ui_dot, (int)xpos, (int)ypos);
     }
 
-    // Update numeric labels - using your SquareLine object names
+    // Update numeric labels - using SquareLine object names from ui_gforce.h
     if(ui_Accel != NULL) {
         lv_label_set_text_fmt(ui_Accel, "Accel: %.2f", max(y / 9.81f, 0.0f));
     }
@@ -112,8 +112,8 @@ void setup()
     // Load SquareLine UI assets
     ui_init();               // Create screens and objects
     
-    // Load main screen - adjust to your actual screen name from SquareLine
-    lv_scr_load(ui_Screen1); // Change if your screen has a different name
+    // Load the gforce screen
+    lv_scr_load(ui_gforce);
 
     SD_Init();               // Initialize SD last
     Serial.println("Setup Complete.");
