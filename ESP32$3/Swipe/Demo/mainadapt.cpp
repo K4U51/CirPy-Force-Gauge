@@ -72,23 +72,23 @@ void Lvgl_GForce_Loop()
     xpos = constrain(xpos, 0, 479);
     ypos = constrain(ypos, 0, 479);
 
-    // Move dot on screen - use actual SquareLine object names
+    // Move dot on screen based on gyro
     if(ui_dot != NULL) {
         lv_obj_set_pos(ui_dot, (int)xpos, (int)ypos);
     }
 
-    // Update numeric labels from SquareLine
-    if(ui_labelAccel != NULL) {
-        lv_label_set_text_fmt(ui_labelAccel, "Accel: %.2f", max(y / 9.81f, 0.0f));
+    // Update numeric labels - using your SquareLine object names
+    if(ui_Accel != NULL) {
+        lv_label_set_text_fmt(ui_Accel, "Accel: %.2f", max(y / 9.81f, 0.0f));
     }
-    if(ui_labelBrake != NULL) {
-        lv_label_set_text_fmt(ui_labelBrake, "Brake: %.2f", abs(min(y / 9.81f, 0.0f)));
+    if(ui_Brake != NULL) {
+        lv_label_set_text_fmt(ui_Brake, "Brake: %.2f", abs(min(y / 9.81f, 0.0f)));
     }
-    if(ui_labelLeft != NULL) {
-        lv_label_set_text_fmt(ui_labelLeft, "Left: %.2f", abs(min(x / 9.81f, 0.0f)));
+    if(ui_Left != NULL) {
+        lv_label_set_text_fmt(ui_Left, "Left: %.2f", abs(min(x / 9.81f, 0.0f)));
     }
-    if(ui_labelRight != NULL) {
-        lv_label_set_text_fmt(ui_labelRight, "Right: %.2f", max(x / 9.81f, 0.0f));
+    if(ui_Right != NULL) {
+        lv_label_set_text_fmt(ui_Right, "Right: %.2f", max(x / 9.81f, 0.0f));
     }
 }
 
@@ -99,7 +99,7 @@ void setup()
     Serial.println("System Booting...");
 
     // Initialize drivers and sensors
-    Driver_Init();  // Removed duplicate I2C_Init()
+    Driver_Init();
 
     // Waveshare demo display init
     LCD_Init();
@@ -109,8 +109,8 @@ void setup()
     // Load SquareLine UI assets
     ui_init();               // Create screens and objects
     
-    // Load main screen - check your ui.h for exact screen name
-    lv_scr_load(ui_Screen1); // Adjust to match your SquareLine screen name
+    // Load main screen - adjust to your actual screen name from SquareLine
+    lv_scr_load(ui_Screen1); // Change if your screen has a different name
 
     SD_Init();               // Initialize SD last
     Serial.println("Setup Complete.");
